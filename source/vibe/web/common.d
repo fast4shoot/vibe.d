@@ -126,18 +126,22 @@ unittest
 
 
 /**
-	Uses given function symbol to determine which HTTP method and
-	what URL path should be used to access it in REST API.
+	Determines the HTTP method and path for a given function symbol.
 
-	Is designed for CTFE usage and will assert at run time.
+	The final method and path are determined from the function name, as well as
+	any $(D @method) and $(D @path) attributes that may be applied to it.
+
+	This function is designed for CTFE usage and will assert at run time.
 
 	Returns:
-		Tuple of three elements:
-			* flag "was UDA used to override path"
-			* HTTPMethod extracted
-			* url path extracted
+		A tuple of three elements is returned:
+		$(UL
+			$(LI flag "was UDA used to override path")
+			$(LI $(D HTTPMethod) extracted)
+			$(LI URL path extracted)
+		)
  */
-auto extractHTTPMethodAndName(alias Func)()
+auto extractHTTPMethodAndName(alias Func, bool indexSpecialCase)()
 {   
 	if (!__ctfe)
 		assert(false);
@@ -162,8 +166,8 @@ auto extractHTTPMethodAndName(alias Func)()
 		HTTPMethod.POST   : [ "add", "create", "post" ],
 		HTTPMethod.DELETE : [ "remove", "erase", "delete" ],
 	];
-	
-	string name = __traits(identifier, Func);
+
+	enum name = __traits(identifier, Func);
 	alias T = typeof(&Func) ;
 
 	Nullable!HTTPMethod udmethod;
@@ -186,7 +190,7 @@ auto extractHTTPMethodAndName(alias Func)()
 	if (!udmethod.isNull() && !udurl.isNull()) {
 		return HandlerMeta(true, udmethod.get(), udurl.get());
 	}
-	
+
 	// Anti-copy-paste delegate
 	typeof(return) udaOverride( HTTPMethod method, string url ){
 		return HandlerMeta(
@@ -195,7 +199,7 @@ auto extractHTTPMethodAndName(alias Func)()
 			udurl.isNull() ? url : udurl.get()
 		);
 	}
-	
+
 	if (isPropertyGetter!T) {
 		return udaOverride(HTTPMethod.GET, name);
 	}
@@ -211,10 +215,10 @@ auto extractHTTPMethodAndName(alias Func)()
 				}
 			}
 		}
-		
-		if (name == "index")
+
+		static if (indexSpecialCase && name == "index") {
 			return udaOverride(HTTPMethod.GET, "");
-		else
+		} else
 			return udaOverride(HTTPMethod.POST, name);
 	}
 }
@@ -236,23 +240,23 @@ unittest
 		string mattersnot();
 	}
 	
-	enum ret1 = extractHTTPMethodAndName!(Sample.getInfo);
+	enum ret1 = extractHTTPMethodAndName!(Sample.getInfo, false,);
 	static assert (ret1.hadPathUDA == false);
 	static assert (ret1.method == HTTPMethod.GET);
 	static assert (ret1.url == "Info");
-	enum ret2 = extractHTTPMethodAndName!(Sample.updateDescription);
+	enum ret2 = extractHTTPMethodAndName!(Sample.updateDescription, false);
 	static assert (ret2.hadPathUDA == false);
 	static assert (ret2.method == HTTPMethod.PATCH);
 	static assert (ret2.url == "Description");
-	enum ret3 = extractHTTPMethodAndName!(Sample.putInfo);
+	enum ret3 = extractHTTPMethodAndName!(Sample.putInfo, false);
 	static assert (ret3.hadPathUDA == false);
 	static assert (ret3.method == HTTPMethod.DELETE);
 	static assert (ret3.url == "Info");
-	enum ret4 = extractHTTPMethodAndName!(Sample.getMattersnot);
+	enum ret4 = extractHTTPMethodAndName!(Sample.getMattersnot, false);
 	static assert (ret4.hadPathUDA == true);
 	static assert (ret4.method == HTTPMethod.GET);
 	static assert (ret4.url == "matters");
-	enum ret5 = extractHTTPMethodAndName!(Sample.mattersnot);
+	enum ret5 = extractHTTPMethodAndName!(Sample.mattersnot, false);
 	static assert (ret5.hadPathUDA == true);
 	static assert (ret5.method == HTTPMethod.POST);
 	static assert (ret5.url == "compound/path");
@@ -260,7 +264,10 @@ unittest
 
 
 /**
-    UDA to defeine the ContentType for methods returning an InputStream or ubyte[]
+    Attribute to define the content type for methods.
+
+    This currently applies only to methods returning an $(D InputStream) or
+    $(D ubyte[]).
 */
 ContentTypeAttribute contentType(string data) 
 {
@@ -269,19 +276,12 @@ ContentTypeAttribute contentType(string data)
 	return ContentTypeAttribute(data);
 }
 
-/**
-	User Defined Attribute interface to force specific HTTP method in REST interface
-	for function in question. Usual URL generation rules are still applied so if there
-	are any "get", "query" or similar prefixes, they are filtered out.
 
-	Example:
-	---
-	interface IAPI
-	{
-		// Will be "POST /info" instead of default "GET /info"
-		@method(HTTPMethod.POST) getInfo();
-	}
-	---	
+/**
+	Attribute to force a specific HTTP method for an interface method.
+
+	The usual URL generation rules are still applied, so if there
+	are any "get", "query" or similar prefixes, they are filtered out.
  */
 MethodAttribute method(HTTPMethod data)
 {
@@ -290,25 +290,27 @@ MethodAttribute method(HTTPMethod data)
 	return MethodAttribute(data);
 }
 
-/**
-	User Defined Attribute interface to force specific URL path n REST interface
-	for function in question. Path attribute is relative though, not absolute.
-
-	Example:
-	---
+///
+unittest {
 	interface IAPI
 	{
-		@path("info2") getInfo();
+		// Will be "POST /info" instead of default "GET /info"
+		@method(HTTPMethod.POST) string getInfo();
 	}
-	
-	// ...
-	
-	shared static this()
-	{
-		registerRestInterface!IAPI(new URLRouter(), new API(), "/root/");
-		// now IAPI.getInfo is tied to "GET /root/info2"
-	}
-	---	
+}
+
+
+/**
+	Attibute to force a specific URL path.
+
+	This attribute can be applied either to an interface itself, in which
+	case it defines the root path for all methods within it,
+	or on any function, in which case it defines the relative path
+	of this method.
+	Path are always relative, even path on interfaces, as you can
+	see in the example below.
+
+	See_Also: $(D rootPathFromName) for automatic name generation.
 */
 PathAttribute path(string data) 
 {
@@ -317,53 +319,55 @@ PathAttribute path(string data)
 	return PathAttribute(data);
 }
 
-
-/**
-	UDA to define root URL prefix for annotated REST interface.
-	Empty path means deducing prefix from interface type name (see also rootPathFromName)
- */
-RootPathAttribute rootPath(string path)
-{
-	if (!__ctfe)
-		assert(false, onlyAsUda!__FUNCTION__);
-	return RootPathAttribute(path);
-}
 ///
-unittest
-{
-	import vibe.http.router;
-	import vibe.web.rest;
-
-	@rootPath("/oops")
+unittest {
+	@path("/foo")
 	interface IAPI
 	{
-		int getFoo();
+		@path("info2") string getInfo();
 	}
 
-	class API : IAPI
+	class API : IAPI {
+		string getInfo() { return "Hello, World!"; }
+	}
+	
+	void test()
 	{
-		int getFoo()
-		{
-			return 42;
-		}
+		import vibe.http.router;
+		import vibe.web.rest;
+
+		auto router = new URLRouter;
+		
+		// Tie IAPI.getInfo to "GET /root/foo/info2"
+		router.registerRestInterface!IAPI(new API(), "/root/");
+		
+		// Or just to "GET /foo/info2"
+		router.registerRestInterface!IAPI(new API());
+
+		// ...
 	}
-
-	auto router = new URLRouter();
-	registerRestInterface(router, new API());
-	auto routes= router.getAllRoutes();
-
-	assert(routes[0].pattern == "/oops/foo" && routes[0].method == HTTPMethod.GET);
 }
 
 
 /**
-	Convenience alias
+	Scheduled for deprecation - use @$(D path) instead.
+
+	See_Also: $(D path)
  */
-@property RootPathAttribute rootPathFromName()
+PathAttribute rootPath(string path)
 {
 	if (!__ctfe)
 		assert(false, onlyAsUda!__FUNCTION__);
-	return RootPathAttribute("");
+	return PathAttribute(path);
+}
+
+
+/// Convenience alias to generate a name from the interface's name.
+@property PathAttribute rootPathFromName()
+{
+	if (!__ctfe)
+		assert(false, onlyAsUda!__FUNCTION__);
+	return PathAttribute("");
 }
 ///
 unittest
@@ -433,27 +437,11 @@ package struct MethodAttribute
 }
 
 /// private
-package deprecated alias OverriddenMethod = MethodAttribute;
-
-/// private
 package struct PathAttribute
 {
 	string data;
 	alias data this;
 }
-
-/// private
-package deprecated alias OverriddenPath = PathAttribute;
-
-/// private
-package struct RootPathAttribute
-{
-	string data;
-	alias data this;
-}
-
-/// private
-package deprecated alias RootPath = RootPathAttribute;
 
 /// Private struct describing the origin of a parameter (Query, Header, Body).
 package struct WebParamAttribute {
@@ -637,7 +625,7 @@ static assert(isNullable!(NullableW!int));
 
 
 // NOTE: dst is assumed to be uninitialized
-package bool readFormParamRec(T)(HTTPServerRequest req, ref T dst, string fieldname, bool required)
+package bool readFormParamRec(T)(scope HTTPServerRequest req, ref T dst, string fieldname, bool required)
 {
 	import std.string;
 	import std.traits;

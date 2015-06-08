@@ -9,42 +9,43 @@
 		deserializing a certain type:
 
 		$(OL
-			$(LI An $(D enum) type is serialized as its raw value, except if
-				$(D @byName) is used, in which case the name of the enum value
+			$(LI An `enum` type is serialized as its raw value, except if
+				`@byName` is used, in which case the name of the enum value
 				is serialized.)
 			$(LI Any type that is specifically supported by the serializer
 				is directly serialized. For example, the BSON serializer
-				supports $(D BsonObjectID) directly.)
-			$(LI Arrays and tuples ($(D std.typecons.Tuple)) are serialized
+				supports `BsonObjectID` directly.)
+			$(LI Arrays and tuples (`std.typecons.Tuple`) are serialized
 				using the array serialization functions where each element is
 				serialized again according to these rules.)
 			$(LI Associative arrays are serialized similar to arrays. The key
-				type of the AA must satisfy the $(D isStringSerializable) trait
+				type of the AA must satisfy the `isStringSerializable` trait
 				and will always be serialized as a string.)
-			$(LI Any $(D Nullable!T) will be serialized as either $(D null), or
+			$(LI Any `Nullable!T` will be serialized as either `null`, or
 				as the contained value (subject to these rules again).)
-			$(LI Types satisfying the $(D isPolicySerializable) trait for the
-				supplied $(D Policy) will be serialized as the value returned
-				by the policy $(D toRepresentation) function (again subject to
+			$(LI Any `BitFlags!T` value will be serialized as `T[]`)
+			$(LI Types satisfying the `isPolicySerializable` trait for the
+				supplied `Policy` will be serialized as the value returned
+				by the policy `toRepresentation` function (again subject to
 				these rules).)
-			$(LI Types satisfying the $(D isCustomSerializable) trait will be
-				serialized as the value returned by their $(D toRepresentation)
+			$(LI Types satisfying the `isCustomSerializable` trait will be
+				serialized as the value returned by their `toRepresentation`
 				method (again subject to these rules).)
-			$(LI Types satisfying the $(D isISOExtSerializable) trait will be
-				serialized as a string, as returned by their $(D toISOExtString)
-				method. This causes types such as $(D SysTime) to be serialized
+			$(LI Types satisfying the `isISOExtStringSerializable` trait will be
+				serialized as a string, as returned by their `toISOExtString`
+				method. This causes types such as `SysTime` to be serialized
 				as strings.)
-			$(LI Types satisfying the $(D isStringSerializable) trait will be
-				serialized as a string, as returned by their $(D toString)
+			$(LI Types satisfying the `isStringSerializable` trait will be
+				serialized as a string, as returned by their `toString`
 				method.)
 			$(LI Struct and class types by default will be serialized as
 				associative arrays, where the key is the name of the
-				corresponding field (can be overridden using the $(D @name)
-				attribute). If the struct/class is annotated with $(D @asArray),
+				corresponding field (can be overridden using the `@name`
+				attribute). If the struct/class is annotated with `@asArray`,
 				it will instead be serialized as a flat array of values in the
 				order of declaration. Null class references will be serialized
-				as $(D null).)
-			$(LI Pointer types will be serialized as either $(D null), or as
+				as `null`.)
+			$(LI Pointer types will be serialized as either `null`, or as
 				the value they point to.)
 			$(LI Built-in integers and floating point values, as well as
 				boolean values will be converted to strings, if the serializer
@@ -106,7 +107,7 @@ import std.typetuple;
 	The serializer must have a value result for the first form
 	to work. Otherwise, use the range based form.
 
-	See_Also: vibe.data.json.JsonSerializer, vibe.data.json.JsonStringSerializer, vibe.data.bson.BsonSerializer
+	See_Also: `vibe.data.json.JsonSerializer`, `vibe.data.json.JsonStringSerializer`, `vibe.data.bson.BsonSerializer`
 */
 auto serialize(Serializer, T, ARGS...)(T value, ARGS args)
 {
@@ -120,7 +121,9 @@ void serialize(Serializer, T)(ref Serializer serializer, T value)
 	serializeImpl!(Serializer, DefaultPolicy, T)(serializer, value);
 }
 
-///
+/** Note that there is a convenience function `vibe.data.json.serializeToJson`
+	that can be used instead of manually invoking `serialize`.
+*/
 unittest {
 	import vibe.data.json;
 
@@ -150,12 +153,12 @@ unittest {
 }
 
 /**
-	Serializes a value with the given serializer, representing values according to $(D Policy) when possible.
+	Serializes a value with the given serializer, representing values according to `Policy` when possible.
 
 	The serializer must have a value result for the first form
 	to work. Otherwise, use the range based form.
 
-	See_Also: vibe.data.json.JsonSerializer, vibe.data.json.JsonStringSerializer, vibe.data.bson.BsonSerializer
+	See_Also: `vibe.data.json.JsonSerializer`, `vibe.data.json.JsonStringSerializer`, `vibe.data.bson.BsonSerializer`
 */
 auto serializeWithPolicy(Serializer, alias Policy, T, ARGS...)(T value, ARGS args)
 {
@@ -189,6 +192,7 @@ version (unittest)
 		}
 	}
 }
+
 ///
 unittest {
 	import vibe.data.json;
@@ -210,13 +214,14 @@ unittest {
 	assert(serializedF.get!string == "0.1x0.2");
 }
 
+
 /**
 	Deserializes and returns a serialized value.
 
 	serialized_data can be either an input range or a value containing
 	the serialized data, depending on the type of serializer used.
 
-	See_Also: vibe.data.json.JsonSerializer, vibe.data.json.JsonStringSerializer, vibe.data.bson.BsonSerializer
+	See_Also: `vibe.data.json.JsonSerializer`, `vibe.data.json.JsonStringSerializer`, `vibe.data.bson.BsonSerializer`
 */
 T deserialize(Serializer, T, ARGS...)(ARGS args)
 {
@@ -224,7 +229,9 @@ T deserialize(Serializer, T, ARGS...)(ARGS args)
 	return deserializeImpl!(T, DefaultPolicy, Serializer)(deserializer);
 }
 
-///
+/** Note that there is a convenience function `vibe.data.json.deserializeJson`
+	that can be used instead of manually invoking `deserialize`.
+*/
 unittest {
 	import vibe.data.json;
 
@@ -243,12 +250,12 @@ unittest {
 }
 
 /**
-	Deserializes and returns a serialized value, interpreting values according to $(D Policy) when possible.
+	Deserializes and returns a serialized value, interpreting values according to `Policy` when possible.
 
 	serialized_data can be either an input range or a value containing
 	the serialized data, depending on the type of serializer used.
 
-	See_Also: vibe.data.json.JsonSerializer, vibe.data.json.JsonStringSerializer, vibe.data.bson.BsonSerializer
+	See_Also: `vibe.data.json.JsonSerializer`, `vibe.data.json.JsonStringSerializer`, `vibe.data.bson.BsonSerializer`
 */
 T deserializeWithPolicy(Serializer, alias Policy, T, ARGS...)(ARGS args)
 {
@@ -283,6 +290,7 @@ unittest {
 private void serializeImpl(Serializer, alias Policy, T, ATTRIBUTES...)(ref Serializer serializer, T value)
 {
 	import std.typecons : Nullable, Tuple, tuple;
+	static if (__VERSION__ >= 2067) import std.typecons : BitFlags;
 
 	static assert(Serializer.isSupportedValueType!string, "All serializers must support string values.");
 	static assert(Serializer.isSupportedValueType!(typeof(null)), "All serializers must support null values.");
@@ -346,6 +354,22 @@ private void serializeImpl(Serializer, alias Policy, T, ATTRIBUTES...)(ref Seria
 	} else static if (/*isInstanceOf!(Nullable, TU)*/is(T == Nullable!TPS, TPS...)) {
 		if (value.isNull()) serializeImpl!(Serializer, Policy, typeof(null))(serializer, null);
 		else serializeImpl!(Serializer, Policy, typeof(value.get()), ATTRIBUTES)(serializer, value.get());
+	} else static if (__VERSION__ >= 2067 && is(T == BitFlags!E, E)) {
+		size_t cnt = 0;
+		foreach (v; EnumMembers!E)
+			if (value & v)
+				cnt++;
+
+		serializer.beginWriteArray!(E[])(cnt);
+		cnt = 0;
+		foreach (v; EnumMembers!E)
+			if (value & v) {
+				serializer.beginWriteArrayEntry!E(cnt);
+				serializeImpl!(Serializer, Policy, E, ATTRIBUTES)(serializer, v);
+				serializer.endWriteArrayEntry!E(cnt);
+				cnt++;
+			}
+		serializer.endWriteArray!(E[])();
 	} else static if (isPolicySerializable!(Policy, TU)) {
 		alias CustomType = typeof(Policy!TU.toRepresentation(TU.init));
 		serializeImpl!(Serializer, Policy, CustomType, ATTRIBUTES)(serializer, Policy!TU.toRepresentation(value));
@@ -424,6 +448,7 @@ private void serializeImpl(Serializer, alias Policy, T, ATTRIBUTES...)(ref Seria
 private T deserializeImpl(T, alias Policy, Serializer, ATTRIBUTES...)(ref Serializer deserializer)
 {
 	import std.typecons : Nullable;
+	static if (__VERSION__ >= 2067) import std.typecons : BitFlags;
 
 	static assert(Serializer.isSupportedValueType!string, "All serializers must support string values.");
 	static assert(Serializer.isSupportedValueType!(typeof(null)), "All serializers must support null values.");
@@ -469,6 +494,12 @@ private T deserializeImpl(T, alias Policy, Serializer, ATTRIBUTES...)(ref Serial
 	} else static if (isInstanceOf!(Nullable, T)) {
 		if (deserializer.tryReadNull()) return T.init;
 		return T(deserializeImpl!(typeof(T.init.get()), Policy, Serializer, ATTRIBUTES)(deserializer));
+	} else static if (__VERSION__ >= 2067 && is(T == BitFlags!E, E)) {
+		T ret;
+		deserializer.readArray!(E[])((sz) {}, {
+			ret |= deserializeImpl!(E, Policy, Serializer, ATTRIBUTES)(deserializer);
+		});
+		return ret;
 	} else static if (isPolicySerializable!(Policy, T)) {
 		alias CustomType = typeof(Policy!T.toRepresentation(T.init));
 		return Policy!T.fromRepresentation(deserializeImpl!(CustomType, Policy, Serializer, ATTRIBUTES)(deserializer));
@@ -537,13 +568,13 @@ private T deserializeImpl(T, alias Policy, Serializer, ATTRIBUTES...)(ref Serial
 				enforce(set[i], "Missing non-optional field '"~mname~"' of type '"~T.stringof~"'.");
 		return ret;
 	} else static if (isPointer!T) {
-		if (deserializer.isNull()) return null;
+		if (deserializer.tryReadNull()) return null;
 		alias PT = PointerTarget!T;
 		auto ret = new PT;
-		*ret = deserializeImpl!(PT, Policy)(deserializer);
+		*ret = deserializeImpl!(PT, Policy, Serializer)(deserializer);
 		return ret;
 	} else static if (is(T == bool) || is(T : real) || is(T : long)) {
-		return to!T(deserializeImpl!(string, Policy)(deserializer));
+		return to!T(deserializeImpl!(string, Policy, Serializer)(deserializer));
 	} else static assert(false, "Unsupported serialization type: " ~ T.stringof);
 }
 
@@ -678,12 +709,12 @@ struct AsArrayAttribute {}
 	Checks if a given type has a custom serialization representation.
 
 	A class or struct type is custom serializable if it defines a pair of
-	$(D toRepresentation)/$(D fromRepresentation) methods. Any class or
+	`toRepresentation`/`fromRepresentation` methods. Any class or
 	struct type that has this trait will be serialized by using the return
-	value of it's $(D toRepresentation) method instead of the original value.
+	value of it's `toRepresentation` method instead of the original value.
 
-	This trait has precedence over $(D isISOExtStringSerializable) and
-	$(D isStringSerializable).
+	This trait has precedence over `isISOExtStringSerializable` and
+	`isStringSerializable`.
 */
 template isCustomSerializable(T)
 {
@@ -707,14 +738,14 @@ unittest {
 	Checks if a given type has an ISO extended string serialization representation.
 
 	A class or struct type is ISO extended string serializable if it defines a
-	pair of $(D toISOExtString)/$(D fromISOExtString) methods. Any class or
+	pair of `toISOExtString`/`fromISOExtString` methods. Any class or
 	struct type that has this trait will be serialized by using the return
-	value of it's $(D toISOExtString) method instead of the original value.
+	value of it's `toISOExtString` method instead of the original value.
 
 	This is mainly useful for supporting serialization of the the date/time
-	types in $(D std.datetime).
+	types in `std.datetime`.
 
-	This trait has precedence over $(D isStringSerializable).
+	This trait has precedence over `isStringSerializable`.
 */
 template isISOExtStringSerializable(T)
 {
@@ -742,9 +773,9 @@ unittest {
 	Checks if a given type has a string serialization representation.
 
 	A class or struct type is string serializable if it defines a pair of
-	$(D toString)/$(D fromString) methods. Any class or struct type that
+	`toString`/`fromString` methods. Any class or struct type that
 	has this trait will be serialized by using the return value of it's
-	$(D toString) method instead of the original value.
+	`toString` method instead of the original value.
 */
 template isStringSerializable(T)
 {
@@ -780,15 +811,15 @@ private template DefaultPolicy(T)
 	Checks if a given policy supports custom serialization for a given type.
 
 	A class or struct type is custom serializable according to a policy if
-	the policy defines a pair of $(D toRepresentation)/$(D fromRepresentation)
+	the policy defines a pair of `toRepresentation`/`fromRepresentation`
 	functions. Any class or struct type that has this trait for the policy supplied to
-	$D(serializeWithPolicy) will be serialized by using the return value of the
-	policy $(D toRepresentation) function instead of the original value.
+	`serializeWithPolicy` will be serialized by using the return value of the
+	policy `toRepresentation` function instead of the original value.
 
-	This trait has precedence over $(D isCustomSerializable),
-	$(D isISOExtStringSerializable) and $(D isStringSerializable).
+	This trait has precedence over `isCustomSerializable`,
+	`isISOExtStringSerializable` and `isStringSerializable`.
 
-	See_Also: vibe.data.serialization.serializeWithPolicy
+	See_Also: `vibe.data.serialization.serializeWithPolicy`
 */
 template isPolicySerializable(alias Policy, T)
 {
@@ -814,12 +845,12 @@ unittest {
 /**
 	Chains serialization policy.
 
-	Constructs a serialization policy that given a type $(D T) will apply the
-	first compatible policy $(D toRepresentation) and $(D fromRepresentation)
+	Constructs a serialization policy that given a type `T` will apply the
+	first compatible policy `toRepresentation` and `fromRepresentation`
 	functions. Policies are evaluated left-to-right according to
-	$(D isPolicySerializable).
+	`isPolicySerializable`.
 
-	See_Also: vibe.data.serialization.serializeWithPolicy 
+	See_Also: `vibe.data.serialization.serializeWithPolicy`
 */
 template ChainedPolicy(alias Primary, Fallbacks...)
 {
@@ -985,45 +1016,81 @@ version (unittest) {
 		enum isSupportedValueType(T) = is(T == string) || is(T == typeof(null)) || is(T == float) || is (T == int);
 
 		string getSerializedResult() { return result; }
-		void beginWriteDictionary(T)() { result ~= "D("~T.stringof~"){"; }
-		void endWriteDictionary(T)() { result ~= "}D("~T.stringof~")"; }
-		void beginWriteDictionaryEntry(T)(string name) { result ~= "DE("~T.stringof~","~name~")("; }
-		void endWriteDictionaryEntry(T)(string name) { result ~= ")DE("~T.stringof~","~name~")"; }
-		void beginWriteArray(T)(size_t length) { result ~= "A("~T.stringof~")["~length.to!string~"]["; }
-		void endWriteArray(T)() { result ~= "]A("~T.stringof~")"; }
-		void beginWriteArrayEntry(T)(size_t i) { result ~= "AE("~T.stringof~","~i.to!string~")("; }
-		void endWriteArrayEntry(T)(size_t i) { result ~= ")AE("~T.stringof~","~i.to!string~")"; }
+		void beginWriteDictionary(T)() { result ~= "D("~T.mangleof~"){"; }
+		void endWriteDictionary(T)() { result ~= "}D("~T.mangleof~")"; }
+		void beginWriteDictionaryEntry(T)(string name) { result ~= "DE("~T.mangleof~","~name~")("; }
+		void endWriteDictionaryEntry(T)(string name) { result ~= ")DE("~T.mangleof~","~name~")"; }
+		void beginWriteArray(T)(size_t length) { result ~= "A("~T.mangleof~")["~length.to!string~"]["; }
+		void endWriteArray(T)() { result ~= "]A("~T.mangleof~")"; }
+		void beginWriteArrayEntry(T)(size_t i) { result ~= "AE("~T.mangleof~","~i.to!string~")("; }
+		void endWriteArrayEntry(T)(size_t i) { result ~= ")AE("~T.mangleof~","~i.to!string~")"; }
 		void writeValue(T)(T value) {
 			if (is(T == typeof(null))) result ~= "null";
 			else {
 				assert(isSupportedValueType!T);
-				result ~= "V("~T.stringof~")("~value.to!string~")";
+				result ~= "V("~T.mangleof~")("~value.to!string~")";
 			}
 		}
 
 		// deserialization
 		void readDictionary(T)(scope void delegate(string) entry_callback)
 		{
-			enum prefix = "D("~T.stringof~"){";
-			assert(result.startsWith(prefix));
-			result  = result[prefix.length .. $];
-			while (true) {
-				// ...
-				assert(false);
+			skip("D("~T.mangleof~"){");
+			while (result.startsWith("DE(")) {
+				result = result[3 .. $];
+				auto idx = result.indexOf(',');
+				auto idx2 = result.indexOf(")(");
+				assert(idx > 0 && idx2 > idx);
+				auto t = result[0 .. idx];
+				auto n = result[idx+1 .. idx2];
+				result = result[idx2+2 .. $];
+				entry_callback(n);
+				skip(")DE("~t~","~n~")");
 			}
+			skip("}D("~T.mangleof~")");
 		}
 
 		void readArray(T)(scope void delegate(size_t) size_callback, scope void delegate() entry_callback)
 		{
-			enum prefix = "A("~T.stringof~")[";
-			assert(result.startsWith(prefix));
-			result  = result[prefix.length .. $];
-			assert(false);
+			skip("A("~T.mangleof~")[");
+			auto bidx = result.indexOf("][");
+			assert(bidx > 0);
+			auto cnt = result[0 .. bidx].to!size_t;
+			result = result[bidx+2 .. $];
+
+			size_t i = 0;
+			while (result.startsWith("AE(")) {
+				result = result[3 .. $];
+				auto idx = result.indexOf(',');
+				auto idx2 = result.indexOf(")(");
+				assert(idx > 0 && idx2 > idx);
+				auto t = result[0 .. idx];
+				auto n = result[idx+1 .. idx2];
+				result = result[idx2+2 .. $];
+				assert(n == i.to!string);
+				entry_callback();
+				skip(")AE("~t~","~n~")");
+				i++;
+			}
+			skip("]A("~T.mangleof~")");
+
+			assert(i == cnt);
 		}
 
-		void readValue(T)()
+		T readValue(T)()
 		{
-			assert(false);
+			skip("V("~T.mangleof~")(");
+			auto idx = result.indexOf(')');
+			assert(idx >= 0);
+			auto ret = result[0 .. idx].to!T;
+			result = result[idx+1 .. $];
+			return ret;
+		}
+
+		void skip(string prefix)
+		{
+			assert(result.startsWith(prefix), result);
+			result = result[prefix.length .. $];
 		}
 
 		bool tryReadNull()
@@ -1039,92 +1106,118 @@ version (unittest) {
 unittest { // basic serialization behavior
 	import std.typecons : Nullable;
 
-	assert(serialize!TestSerializer("hello") == "V(string)(hello)");
-	assert(serialize!TestSerializer(12) == "V(int)(12)");
-	assert(serialize!TestSerializer(12.0) == "V(string)(12)");
-	assert(serialize!TestSerializer(12.0f) == "V(float)(12)");
-	assert(serialize!TestSerializer(null) == "null");
-	assert(serialize!TestSerializer(["hello", "world"]) ==
-		"A(string[])[2][AE(string,0)(V(string)(hello))AE(string,0)AE(string,1)(V(string)(world))AE(string,1)]A(string[])");
-	assert(serialize!TestSerializer(["hello": "world"]) ==
-		"D(string[string]){DE(string,hello)(V(string)(world))DE(string,hello)}D(string[string])");
-	assert(serialize!TestSerializer(cast(int*)null) == "null");
+	static void test(T)(T value, string expected) {
+		assert(serialize!TestSerializer(value) == expected, serialize!TestSerializer(value));
+		static if (isPointer!T) {
+			if (value) assert(*deserialize!(TestSerializer, T)(expected) == *value);
+			else assert(deserialize!(TestSerializer, T)(expected) is null);
+		} else static if (is(T == Nullable!U, U)) {
+			if (value.isNull()) assert(deserialize!(TestSerializer, T)(expected).isNull);
+			else assert(deserialize!(TestSerializer, T)(expected) == value);
+		} else assert(deserialize!(TestSerializer, T)(expected) == value);
+	}
+
+	test("hello", "V(Aya)(hello)");
+	test(12, "V(i)(12)");
+	test(12.0, "V(Aya)(12)");
+	test(12.0f, "V(f)(12)");
+	assert(serialize!TestSerializer(null) ==  "null");
+	test(["hello", "world"], "A(AAya)[2][AE(Aya,0)(V(Aya)(hello))AE(Aya,0)AE(Aya,1)(V(Aya)(world))AE(Aya,1)]A(AAya)");
+	test(["hello": "world"], "D(HAyaAya){DE(Aya,hello)(V(Aya)(world))DE(Aya,hello)}D(HAyaAya)");
+	test(cast(int*)null, "null");
 	int i = 42;
-	assert(serialize!TestSerializer(&i) == "V(int)(42)");
+	test(&i, "V(i)(42)");
 	Nullable!int j;
-	assert(serialize!TestSerializer(j) == "null");
+	test(j, "null");
 	j = 42;
-	assert(serialize!TestSerializer(j) == "V(int)(42)");
+	test(j, "V(i)(42)");
 }
 
 unittest { // basic user defined types
 	static struct S { string f; }
+	enum Sm = S.mangleof;
 	auto s = S("hello");
-	assert(serialize!TestSerializer(s) == "D(S){DE(string,f)(V(string)(hello))DE(string,f)}D(S)");
+	enum s_ser = "D("~Sm~"){DE(Aya,f)(V(Aya)(hello))DE(Aya,f)}D("~Sm~")";
+	assert(serialize!TestSerializer(s) == s_ser, serialize!TestSerializer(s));
+	assert(deserialize!(TestSerializer, S)(s_ser) == s);
 
 	static class C { string f; }
+	enum Cm = C.mangleof;
 	C c;
 	assert(serialize!TestSerializer(c) == "null");
 	c = new C;
 	c.f = "hello";
-	assert(serialize!TestSerializer(c) == "D(C){DE(string,f)(V(string)(hello))DE(string,f)}D(C)");
+	enum c_ser = "D("~Cm~"){DE(Aya,f)(V(Aya)(hello))DE(Aya,f)}D("~Cm~")";
+	assert(serialize!TestSerializer(c) == c_ser);
+	assert(deserialize!(TestSerializer, C)(c_ser).f == c.f);
 
 	enum E { hello, world }
-	assert(serialize!TestSerializer(E.hello) == "V(int)(0)");
-	assert(serialize!TestSerializer(E.world) == "V(int)(1)");
+	assert(serialize!TestSerializer(E.hello) == "V(i)(0)");
+	assert(serialize!TestSerializer(E.world) == "V(i)(1)");
 }
 
 unittest { // tuple serialization
+	import std.typecons : Tuple;
+
 	static struct S(T...) { T f; }
+	enum Sm = S!(int, string).mangleof;
+	enum Tum = Tuple!(int, string).mangleof;
 	auto s = S!(int, string)(42, "hello");
 	assert(serialize!TestSerializer(s) ==
-		"D(S!(int, string)){DE(Tuple!(int, string),f)(A(Tuple!(int, string))[2][AE(int,0)(V(int)(42))AE(int,0)AE(string,1)(V(string)(hello))AE(string,1)]A(Tuple!(int, string)))DE(Tuple!(int, string),f)}D(S!(int, string))");
+		"D("~Sm~"){DE("~Tum~",f)(A("~Tum~")[2][AE(i,0)(V(i)(42))AE(i,0)AE(Aya,1)(V(Aya)(hello))AE(Aya,1)]A("~Tum~"))DE("~Tum~",f)}D("~Sm~")");
 
 	static struct T { @asArray S!(int, string) g; }
+	enum Tm = T.mangleof;
 	auto t = T(s);
 	assert(serialize!TestSerializer(t) ==
-		"D(T){DE(S!(int, string),g)(A(S!(int, string))[2][AE(int,0)(V(int)(42))AE(int,0)AE(string,1)(V(string)(hello))AE(string,1)]A(S!(int, string)))DE(S!(int, string),g)}D(T)");
+		"D("~Tm~"){DE("~Sm~",g)(A("~Sm~")[2][AE(i,0)(V(i)(42))AE(i,0)AE(Aya,1)(V(Aya)(hello))AE(Aya,1)]A("~Sm~"))DE("~Sm~",g)}D("~Tm~")");
 }
 
 unittest { // testing the various UDAs
 	enum E { hello, world }
+	enum Em = E.mangleof;
 	static struct S {
 		@byName E e;
 		@ignore int i;
 		@optional float f;
 	}
+	enum Sm = S.mangleof;
 	auto s = S(E.world, 42, 1.0f);
 	assert(serialize!TestSerializer(s) ==
-		"D(S){DE(E,e)(V(string)(world))DE(E,e)DE(float,f)(V(float)(1))DE(float,f)}D(S)");
+		"D("~Sm~"){DE("~Em~",e)(V(Aya)(world))DE("~Em~",e)DE(f,f)(V(f)(1))DE(f,f)}D("~Sm~")");
 }
 
 unittest { // custom serialization support
 	// iso-ext
 	import std.datetime;
 	auto t = TimeOfDay(6, 31, 23);
-	assert(serialize!TestSerializer(t) == "V(string)(06:31:23)");
+	assert(serialize!TestSerializer(t) == "V(Aya)(06:31:23)");
 	auto d = Date(1964, 1, 23);
-	assert(serialize!TestSerializer(d) == "V(string)(1964-01-23)");
+	assert(serialize!TestSerializer(d) == "V(Aya)(1964-01-23)");
 	auto dt = DateTime(d, t);
-	assert(serialize!TestSerializer(dt) == "V(string)(1964-01-23T06:31:23)");
+	assert(serialize!TestSerializer(dt) == "V(Aya)(1964-01-23T06:31:23)");
 	auto st = SysTime(dt, UTC());
-	assert(serialize!TestSerializer(st) == "V(string)(1964-01-23T06:31:23Z)");
+	assert(serialize!TestSerializer(st) == "V(Aya)(1964-01-23T06:31:23Z)");
 
 	// string
 	struct S1 { int i; string toString() const { return "hello"; } static S1 fromString(string) { return S1.init; } }
 	struct S2 { int i; string toString() const { return "hello"; } }
+	enum S2m = S2.mangleof;
 	struct S3 { int i; static S3 fromString(string) { return S3.init; } }
-	assert(serialize!TestSerializer(S1.init) == "V(string)(hello)");
-	assert(serialize!TestSerializer(S2.init) == "D(S2){DE(int,i)(V(int)(0))DE(int,i)}D(S2)");
-	assert(serialize!TestSerializer(S3.init) == "D(S3){DE(int,i)(V(int)(0))DE(int,i)}D(S3)");
+	enum S3m = S3.mangleof;
+	assert(serialize!TestSerializer(S1.init) == "V(Aya)(hello)");
+	assert(serialize!TestSerializer(S2.init) == "D("~S2m~"){DE(i,i)(V(i)(0))DE(i,i)}D("~S2m~")");
+	assert(serialize!TestSerializer(S3.init) == "D("~S3m~"){DE(i,i)(V(i)(0))DE(i,i)}D("~S3m~")");
 
 	// custom
 	struct C1 { int i; float toRepresentation() const { return 1.0f; } static C1 fromRepresentation(float f) { return C1.init; } }
 	struct C2 { int i; float toRepresentation() const { return 1.0f; } }
+	enum C2m = C2.mangleof;
 	struct C3 { int i; static C3 fromRepresentation(float f) { return C3.init; } }
-	assert(serialize!TestSerializer(C1.init) == "V(float)(1)");
-	assert(serialize!TestSerializer(C2.init) == "D(C2){DE(int,i)(V(int)(0))DE(int,i)}D(C2)");
-	assert(serialize!TestSerializer(C3.init) == "D(C3){DE(int,i)(V(int)(0))DE(int,i)}D(C3)");
+	enum C3m = C3.mangleof;
+	assert(serialize!TestSerializer(C1.init) == "V(f)(1)");
+	assert(serialize!TestSerializer(C2.init) == "D("~C2m~"){DE(i,i)(V(i)(0))DE(i,i)}D("~C2m~")");
+	assert(serialize!TestSerializer(C3.init) == "D("~C3m~"){DE(i,i)(V(i)(0))DE(i,i)}D("~C3m~")");
 }
 
 unittest // Testing corner case: member function returning by ref
@@ -1178,4 +1271,35 @@ unittest // Make sure serializing through properties still works
 
 	auto s = S(1, 2);
 	assert(s.serializeToJson().deserializeJson!S() == s);
+}
+
+static if (__VERSION__ >= 2067)
+unittest { // test BitFlags serialization
+	import std.typecons : BitFlags;
+
+	enum Flag {
+		a = 1<<0,
+		b = 1<<1,
+		c = 1<<2
+	}
+	enum Flagm = Flag.mangleof;
+
+	alias Flags = BitFlags!Flag;
+	enum Flagsm = Flags.mangleof;
+
+	enum Fi_ser = "A(A"~Flagm~")[0][]A(A"~Flagm~")";
+	assert(serialize!TestSerializer(Flags.init) == Fi_ser);
+
+	enum Fac_ser = "A(A"~Flagm~")[2][AE("~Flagm~",0)(V(i)(1))AE("~Flagm~",0)AE("~Flagm~",1)(V(i)(4))AE("~Flagm~",1)]A(A"~Flagm~")";
+	assert(serialize!TestSerializer(Flags(Flag.a, Flag.c)) == Fac_ser);
+
+	struct S { @byName Flags f; }
+	enum Sm = S.mangleof;
+	enum Sac_ser = "D("~Sm~"){DE("~Flagsm~",f)(A(A"~Flagm~")[2][AE("~Flagm~",0)(V(Aya)(a))AE("~Flagm~",0)AE("~Flagm~",1)(V(Aya)(c))AE("~Flagm~",1)]A(A"~Flagm~"))DE("~Flagsm~",f)}D("~Sm~")";
+
+	assert(serialize!TestSerializer(S(Flags(Flag.a, Flag.c))) == Sac_ser);
+
+	assert(deserialize!(TestSerializer, Flags)(Fi_ser) == Flags.init);
+	assert(deserialize!(TestSerializer, Flags)(Fac_ser) == Flags(Flag.a, Flag.c));
+	assert(deserialize!(TestSerializer, S)(Sac_ser) == S(Flags(Flag.a, Flag.c)));
 }

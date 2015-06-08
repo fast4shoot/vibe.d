@@ -60,32 +60,38 @@ class DigestAuthInfo
 	}
 }
 
-private bool checkDigest(HTTPServerRequest req, DigestAuthInfo info, string delegate(string realm, string user) pwhash, out bool stale, out string username)
+private bool checkDigest(scope HTTPServerRequest req, DigestAuthInfo info, scope string delegate(string realm, string user) pwhash, out bool stale, out string username)
 {
 	stale = false;
-        username = "";
+	username = "";
 	auto pauth = "Authorization" in req.headers;
+
 	if (pauth && (*pauth).startsWith("Digest ")) {
 		string realm, nonce, response, uri, algorithm;
 		foreach (param; split((*pauth)[7 .. $], ",")) {
 			auto kv = split(param, "=");
-			if( kv[0] == "realm") realm = kv[1][1..$-1];
-			if( kv[0] == "username") username = kv[1][1..$-1];
-			if( kv[0] == "nonce") nonce = kv[1][1..$-1];
-			if( kv[0] == "uri") uri = kv[1][1..$-1];
-			if( kv[0] == "response") response = kv[1][1..$-1];
-			if( kv[0] == "algorithm") algorithm = kv[1][1..$-1];
+			switch (kv[0].strip().toLower()) {
+				default: break;
+				case "realm": realm = kv[1][1..$-1]; break;
+				case "username": username = kv[1][1..$-1]; break;
+				case "nonce": nonce = kv[1][1..$-1]; break;
+				case "uri": uri = kv[1][1..$-1]; break;
+				case "response": response = kv[1][1..$-1]; break;
+				case "algorithm": algorithm = kv[1][1..$-1]; break;
+			}
 		}
 
 		if (realm != info.realm)
 			return false;
 		if (algorithm !is null && algorithm != "MD5")
 			return false;
+
 		auto nonceState = info.checkNonce(nonce, req);
 		if (nonceState != NonceState.Valid) {
 			stale = nonceState == NonceState.Expired;
 			return false;
 		}
+
 		auto ha1 = pwhash(realm, username);
 		auto ha2 = toHexString!(LetterCase.lower)(md5Of(httpMethodString(req.method) ~ ":" ~ uri));
 		auto calcresponse = toHexString!(LetterCase.lower)(md5Of(ha1 ~ ":" ~ nonce ~ ":" ~ ha2 ));
@@ -98,7 +104,7 @@ private bool checkDigest(HTTPServerRequest req, DigestAuthInfo info, string dele
 /**
 	Returns a request handler that enforces request to be authenticated using HTTP Digest Auth.
 */
-HTTPServerRequestDelegate performDigestAuth(DigestAuthInfo info, string delegate(string realm, string user) pwhash)
+HTTPServerRequestDelegate performDigestAuth(DigestAuthInfo info, scope string delegate(string realm, string user) pwhash)
 {
 	void handleRequest(HTTPServerRequest req, HTTPServerResponse res)
 	{
@@ -131,7 +137,7 @@ HTTPServerRequestDelegate performDigestAuth(DigestAuthInfo info, string delegate
 
 	Throws: Throws a HTTPStatusExeption in case of an authentication failure.
 */
-string performDigestAuth(HTTPServerRequest req, HTTPServerResponse res, DigestAuthInfo info, string delegate(string realm, string user) pwhash)
+string performDigestAuth(scope HTTPServerRequest req, scope HTTPServerResponse res, DigestAuthInfo info, scope string delegate(string realm, string user) pwhash)
 {
 	bool stale;
 	string username;
