@@ -606,20 +606,16 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 					alias paramsArgList = Filter!(mixin(GenCmp!("Loop", i, ParamNames[i]).Name), UDATuple!(WebParamAttribute, Func));
 					// @headerParam.
 					static if (paramsArgList[0].origin == WebParamAttribute.Origin.Header) {
-						// If it has no default value
-						static if (is (ParamDefaults[i] == void) && !isNullable!P) {
+						alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
+						// If it has no substitute
+						static if (!Substitute.hasSubstitute) {
 							auto fld = enforceBadRequest(paramsArgList[0].field in req.headers,
 							format("Expected field '%s' in header", paramsArgList[0].field));
 						} else {
 							auto fld = paramsArgList[0].field in req.headers;
 							if (fld is null) {
-								static if (is (ParamDefaults[i] == void)) {
-									params[i] = P();
-									logDebug("No header param %s, using empty nullable", paramsArgList[0].identifier);
-								} else {
-									params[i] = ParamDefaults[i];
-									logDebug("No header param %s, using default value", paramsArgList[0].identifier);
-								}
+								params[i] = Substitute.substitute;
+								logDebug("No header param %s, using substitute value", paramsArgList[0].identifier);
 								continue;
 							}
 						}
@@ -627,19 +623,17 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 						params[i] = fromRestString!P(*fld);
 					} else static if (paramsArgList[0].origin == WebParamAttribute.Origin.Query) {
 						// Note: Doesn't work if HTTPServerOption.parseQueryString is disabled.
-						static if (is (ParamDefaults[i] == void) && !isNullable!P) {
+						alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
+						
+						static if (!Substitute.hasSubstitute) {
 							auto fld = enforceBadRequest(paramsArgList[0].field in req.query,
 										     format("Expected form field '%s' in query", paramsArgList[0].field));
 						} else {
+							pragma (msg, Substitute.substitute);
 							auto fld = paramsArgList[0].field in req.query;
 							if (fld is null) {
-								static if (is (ParamDefaults[i] == void)) {
-									params[i] = P();
-									logDebug("No query param %s, using empty nullable", paramsArgList[0].identifier);
-								} else {
-									params[i] = ParamDefaults[i];
-									logDebug("No query param %s, using default value", paramsArgList[0].identifier);
-								}
+								params[i] = Substitute.substitute;
+								logDebug("No query param %s, using substitute value", paramsArgList[0].identifier);
 								continue;
 							}
 						}
@@ -656,23 +650,26 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 								  );
 						enforceBadRequest(
 								  req.json.type == Json.Type.Object,
-								  "The request body must contain a JSON object with an entry for each parameter."
+								  "The request body must contain a JSON object with an entry for each required parameter."
 								  );
 
-						static if (is(ParamDefaults[i] == void)) {
+						alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
+						static if (!Substitute.hasSubstitute) {
 							auto par = req.json[paramsArgList[0].field];
 							enforceBadRequest(par.type != Json.Type.Undefined,
 									  format("Missing parameter %s", paramsArgList[0].field)
 									  );
 							logDebug("Body param: %s <- %s", paramsArgList[0].identifier, par);
-							params[i] = deserializeJson!P(par);
 						} else {
-							if (req.json[paramsArgList[0].field].type == Json.Type.Undefined) {
-								logDebug("No body param %s, using default value", paramsArgList[0].identifier);
-								params[i] = ParamDefaults[i];
+							auto par = req.json[paramsArgList[0].field];
+							if (par.type == Json.Type.Undefined) {
+								logDebug("No body param %s, using substitute value", paramsArgList[0].identifier);
+								params[i] = Substitute.substitute;
 								continue;
 							}
 						}
+						
+						params[i] = params[i] = deserializeJsonParameter!P(par);
 					} else static assert (false, "Internal error: Origin "~to!string(paramsArgList[0].origin)~" is not implemented.");
 				} else static if (ParamNames[i].startsWith("_")) {
 					// URL parameter
@@ -690,22 +687,25 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 					auto pname = strip(ParamNames[i]);
 
 					if (req.method == HTTPMethod.GET) {
+						// TODO: merge with the WebParamAttribute.Origin.Query section above
 						logDebug("query %s of %s", pname, req.query);
 
-						static if (is (DefVal == void)) {
+						alias Substitute = SubstituteValue!(P, DefVal);
+						static if (!Substitute.hasSubstitute) {
 							enforceBadRequest(
 								pname in req.query,
 								format("Missing query parameter '%s'", pname)
 							);
 						} else {
 							if (pname !in req.query) {
-								params[i] = DefVal;
+								params[i] = Substitute.substitute;
 								continue;
 							}
 						}
 
 						params[i] = fromRestString!P(req.query[pname]);
 					} else {
+						// TODO: merge with the WebParamAttribute.Origin.Body section above
 						logDebug("%s %s", method, pname);
 
 						enforceBadRequest(
@@ -721,18 +721,21 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 							"The request body must contain a JSON object with an entry for each parameter."
 						);
 
-						static if (is(DefVal == void)) {
+						alias Substitute = SubstituteValue!(P, DefVal);
+						static if (!Substitute.hasSubstitute) {
 							auto par = req.json[pname];
 							enforceBadRequest(par.type != Json.Type.Undefined,
 									  format("Missing parameter %s", pname)
 									  );
-							params[i] = deserializeJson!P(par);
 						} else {
-							if (req.json[pname].type == Json.Type.Undefined) {
-								params[i] = DefVal;
+							auto par = req.json[pname];
+							if (par.type == Json.Type.Undefined) {
+								params[i] = Substitute.substitute;
 								continue;
 							}
 						}
+						
+						params[i] = deserializeJsonParameter!P(par);
 					}
 				}
 			}
@@ -765,6 +768,26 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 	}
 
 	return &handler;
+}
+
+/// This deserializes a JSON parameter directly or into a Nullable
+T deserializeJsonParameter(T)(Json parameter)
+{
+	static if (isNullable!T) return T(deserializeJson!(typeof(T.init.get))(parameter));
+	else return deserializeJson!T(parameter);
+}
+
+/// Makes decisions about substituting missing REST parameters
+/// (ie. substitues missing parameters for Nullables or default value)
+template SubstituteValue(T, DefVal...)
+{
+	enum hasDefault = !is(DefVal[0] == void);
+	enum hasNull = isNullable!T;
+	
+	enum hasSubstitute = hasDefault || hasNull;
+	
+	static if (hasDefault) enum substitute = DefVal[0];
+	else static if (hasNull) enum substitute = T();
 }
 
 /// private
