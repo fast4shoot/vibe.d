@@ -392,6 +392,31 @@ unittest
 	assert(routes[0].pattern == "/iapi/foo" && routes[0].method == HTTPMethod.GET);
 }
 
+/**
+ * Represents a rest error message containing unknown content
+ */
+class RestUnexpectedResponseException : HTTPStatusException
+{
+	private {
+		HTTPClientResponse _res;
+	}
+	
+	this(HTTPClientResponse res, Throwable next = null, string file = __FILE__, int line = __LINE__))
+	{
+		super(res.statusCode, "Unexpected REST response", file, line, next);
+		_res = res;
+	}
+	
+	@property HTTPClientResponse response()
+	{
+		return _res;
+	}
+	
+	@property const(HTTPClientResponse) response() const
+	{
+		return _res;
+	}
+}
 
 /** 
  	Respresents a Rest error response
