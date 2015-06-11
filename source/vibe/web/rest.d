@@ -12,7 +12,7 @@ public import vibe.web.common;
 
 import vibe.core.log;
 import vibe.http.router : URLRouter;
-import vibe.http.common : HTTPMethod;
+import vibe.http.common : HTTPMethod, HTTPStatus;
 import vibe.http.server : HTTPServerRequestDelegate;
 import vibe.http.status : isSuccessCode;
 import vibe.internal.meta.uda : UDATuple;
@@ -113,6 +113,9 @@ void registerRestInterface(TImpl)(URLRouter router, TImpl instance, RestInterfac
 		foreach (overload; MemberFunctionsTuple!(I, method)) {
 
 			enum meta = extractHTTPMethodAndName!overload();
+			enum definedStatusCode = findFirstUDA!(StatusCodeAttribute, overload);
+			static if (definedStatusCode.found) enum statusCode = definedStatusCode.value.data;
+			else enum statusCode = HTTPStatus.ok;
 
 			static if (meta.hadPathUDA) {
 				string url = meta.url;
@@ -143,7 +146,7 @@ void registerRestInterface(TImpl)(URLRouter router, TImpl instance, RestInterfac
 				);
 			} else {
 				// normal handler
-				auto handler = jsonMethodHandler!(I, method, overload)(instance, settings);
+				auto handler = jsonMethodHandler!(I, method, overload, statusCode)(instance, settings);
 
 				string[] params = [ ParameterIdentifierTuple!overload ];
 
@@ -368,7 +371,7 @@ class RestInterfaceClient(I) : I
 		 * body_ = The body to send, as a string. If a Content-Type is present in $(D hdrs), it will be used, otherwise it will default to
 		 *		the generic type "application/json".
 		 */
-		Json request(HTTPMethod verb, string name, in ref InetHeaderMap hdrs, string query, string body_) const
+		Json request(HTTPMethod verb, string name, in ref InetHeaderMap hdrs, string query, string body_, Nullable!HTTPStatus expectedStatus) const
 		{
 			import vibe.http.client : HTTPClientRequest, HTTPClientResponse, requestHTTP;
 			import vibe.http.common : HTTPStatusException, HTTPStatus, httpMethodString, httpStatusText;
@@ -405,7 +408,8 @@ class RestInterfaceClient(I) : I
 					 ret.toString()
 					 );
 
-				if (!isSuccessCode(cast(HTTPStatus)res.statusCode))
+				if ((expectedStatus.isNull && !isSuccessCode(cast(HTTPStatus)res.statusCode)) 
+					|| cast(HTTPStatus)res.statusCode == expectedStatus)
 					throw new RestException(res.statusCode, ret);
 			};
 
@@ -555,7 +559,7 @@ class RestInterfaceSettings {
 
 
 /// private
-private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func)(T inst, RestInterfaceSettings settings)
+private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func, HTTPStatus statusCode = HTTPStatus.ok)(T inst, RestInterfaceSettings settings)
 {
 	import std.traits : ParameterTypeTuple, ReturnType, fullyQualifiedName,
 		ParameterDefaultValueTuple, ParameterIdentifierTuple;
@@ -934,6 +938,7 @@ private string genClientBody(alias Func)() {
 	import std.string : format;
 	import std.traits : ReturnType, FunctionTypeOf, ParameterTypeTuple, ParameterIdentifierTuple;
 	import vibe.internal.meta.funcattr : IsAttributedParameter;
+	import vibe.internal.meta.uda : findFirstUDA;
 
 	alias FT = FunctionTypeOf!Func;
 	alias RT = ReturnType!FT;
@@ -941,6 +946,9 @@ private string genClientBody(alias Func)() {
 	alias ParamNames = ParameterIdentifierTuple!Func;
 
 	enum meta = extractHTTPMethodAndName!Func();
+	enum userStatusCode = findFirstUDA!(StatusCodeAttribute, Func);
+	static if (userStatusCode.found) enum statusCode = "Nullable!HTTPStatus(" ~ userStatusCode.value.data.stringof ~ ")";
+	else enum statusCode = "Nullable!HTTPStatus()";
 	enum paramAttr = UDATuple!(WebParamAttribute, Func);
 	enum FuncId = __traits(identifier, Func);
 
@@ -1029,16 +1037,17 @@ private string genClientBody(alias Func)() {
 		request_str ~= q{
 			// By default for GET / HEAD, params are send via the query string.
 			static if (HTTPMethod.%1$s == HTTPMethod.GET || HTTPMethod.%1$s == HTTPMethod.HEAD) {
-				auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%2$s%5$s%3$s), genBody(%4$s));
+				auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%2$s%5$s%3$s), genBody(%4$s), %7$s);
 			} else {
 				// Otherwise, they're send as a Json object via the body.
-				auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%3$s), genBody(%2$s%6$s%4$s));
+				auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%3$s), genBody(%2$s%6$s%4$s), %7$s);
 			}
 
 		}.format(to!string(meta.method),
 			 paramCTMap(defaultParamCTMap), paramCTMap(queryParamCTMap), paramCTMap(bodyParamCTMap), // params map
 			 (defaultParamCTMap.length && queryParamCTMap.length) ? ", " : "", // genQuery(%2$s, %3$s);
-			 (defaultParamCTMap.length && bodyParamCTMap.length) ? ", " : ""); // genBody(%2$s, %4$s);
+			 (defaultParamCTMap.length && bodyParamCTMap.length) ? ", " : "",
+			 statusCode); // genBody(%2$s, %4$s);
 
 		static if (!is(RT == void)) {
 			request_str ~= q{

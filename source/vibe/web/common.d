@@ -393,15 +393,27 @@ unittest
 }
 
 /**
+ * Declare a REST method's HTTP status code.
+ */
+StatusCodeAttribute statusCode(HTTPStatus status)
+{
+	if (!__ctfe)
+		assert(false, onlyAsUda!__FUNCTION__);
+	return StatusCodeAttribute(status);
+}
+
+/**
  * Represents a rest error message containing unknown content
  */
 class RestUnexpectedResponseException : HTTPStatusException
 {
+	import vibe.http.client;
+	
 	private {
 		HTTPClientResponse _res;
 	}
 	
-	this(HTTPClientResponse res, Throwable next = null, string file = __FILE__, int line = __LINE__))
+	this(HTTPClientResponse res, Throwable next = null, string file = __FILE__, int line = __LINE__)
 	{
 		super(res.statusCode, "Unexpected REST response", file, line, next);
 		_res = res;
@@ -441,6 +453,13 @@ class RestException : HTTPStatusException {
 	
 	/// The HTTP status code
 	@property const(Json) jsonResult() const { return m_jsonResult; }
+}
+
+/// private
+package struct StatusCodeAttribute
+{
+	HTTPStatus data;
+	alias data this;
 }
 
 /// private
