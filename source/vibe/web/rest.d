@@ -415,8 +415,8 @@ class RestInterfaceClient(I) : I
 					 ret.toString()
 					 );
 
-				if ((expectedStatus.isNull && !isSuccessCode(cast(HTTPStatus)res.statusCode)) 
-					|| cast(HTTPStatus)res.statusCode == expectedStatus)
+				auto resStatusCode = cast(HTTPStatus) res.statusCode;
+				if (expectedStatus.isNull ? !isSuccessCode(resStatusCode) : resStatusCode != expectedStatus)
 					throw new RestException(res.statusCode, ret);
 			};
 
