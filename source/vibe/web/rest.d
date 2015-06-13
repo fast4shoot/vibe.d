@@ -124,8 +124,8 @@ void registerRestInterface(TImpl)(URLRouter router, TImpl instance, RestInterfac
 		foreach (overload; MemberFunctionsTuple!(I, method)) {
 
 			enum meta = extractHTTPMethodAndName!(overload, false)();
-			enum definedStatusCode = findFirstUDA!(StatusCodeAttribute, overload);
-			static if (definedStatusCode.found) enum statusCode = definedStatusCode.value.data;
+			enum userStatusCode = findFirstUDA!(StatusCodeAttribute, overload);
+			static if (userStatusCode.found) enum statusCode = userStatusCode.value.statusCode;
 			else enum statusCode = HTTPStatus.ok;
 
 			static if (meta.hadPathUDA) {
@@ -416,6 +416,7 @@ class RestInterfaceClient(I) : I
 					 );
 
 				auto resStatusCode = cast(HTTPStatus) res.statusCode;
+				
 				if (expectedStatus.isNull ? !isSuccessCode(resStatusCode) : resStatusCode != expectedStatus)
 					throw new RestException(res.statusCode, ret);
 			};
@@ -974,6 +975,7 @@ mixin template RestClientMethods_OverloadImpl(Overloads...) {
 }
 
 private string genClientBody(alias Func)() {
+	import std.conv : to;
 	import std.string : format;
 	import std.traits : ReturnType, FunctionTypeOf, ParameterTypeTuple, ParameterIdentifierTuple;
 	import vibe.internal.meta.funcattr : IsAttributedParameter;
@@ -986,9 +988,9 @@ private string genClientBody(alias Func)() {
 
 	enum meta = extractHTTPMethodAndName!(Func, false)();
 	enum userStatusCode = findFirstUDA!(StatusCodeAttribute, Func);
-	static if (userStatusCode.found) enum statusCode = "Nullable!HTTPStatus(" ~ userStatusCode.value.data.stringof ~ ")";
+	static if (userStatusCode.found) enum statusCode = "Nullable!HTTPStatus(HTTPStatus." ~ userStatusCode.value.statusCode.to!string ~ ")";
 	else enum statusCode = "Nullable!HTTPStatus()";
-	
+
 	enum paramAttr = UDATuple!(WebParamAttribute, Func);
 	enum FuncId = __traits(identifier, Func);
 

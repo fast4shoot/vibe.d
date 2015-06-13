@@ -462,8 +462,7 @@ class RestException : HTTPStatusException {
 /// private
 package struct StatusCodeAttribute
 {
-	HTTPStatus data;
-	alias data this;
+	HTTPStatus statusCode;
 }
 
 /// private
