@@ -66,7 +66,7 @@ class WebSocketException: Exception
 /**
     Establishes a web socket conection and passes it to the $(D on_handshake) delegate.
 */
-void handleWebSocket(scope WebSocketHandshakeDelegate on_handshake, HTTPServerRequest req, HTTPServerResponse res)
+void handleWebSocket(scope WebSocketHandshakeDelegate on_handshake, scope HTTPServerRequest req, scope HTTPServerResponse res)
 {
 	auto pUpgrade = "Upgrade" in req.headers;
 	auto pConnection = "Connection" in req.headers;
@@ -113,24 +113,14 @@ void handleWebSocket(scope WebSocketHandshakeDelegate on_handshake, HTTPServerRe
 /**
 	Returns a HTTP request handler that establishes web socket conections.
 */
-HTTPServerRequestDelegate handleWebSockets(WebSocketHandshakeDelegate on_handshake)
-{
-	void callback(HTTPServerRequest req, HTTPServerResponse res)
-	{
-		handleWebSocket(on_handshake, req, res);
-	}
-	return &callback;
-}
-/// ditto
-HTTPServerRequestDelegate handleWebSockets(void function(scope WebSocket) on_handshake)
+HTTPServerRequestDelegateS handleWebSockets(void function(scope WebSocket) on_handshake)
 {
 	return handleWebSockets(toDelegate(on_handshake));
 }
 /// ditto
-deprecated("Please add 'scope' to the WebSocket parameter of the callback.")
-HTTPServerRequestDelegate handleWebSockets(void delegate(WebSocket) on_handshake)
+HTTPServerRequestDelegateS handleWebSockets(WebSocketHandshakeDelegate on_handshake)
 {
-	void callback(HTTPServerRequest req, HTTPServerResponse res)
+	void callback(scope HTTPServerRequest req, scope HTTPServerResponse res)
 	{
 		auto pUpgrade = "Upgrade" in req.headers;
 		auto pConnection = "Connection" in req.headers;
@@ -165,6 +155,7 @@ HTTPServerRequestDelegate handleWebSockets(void delegate(WebSocket) on_handshake
 		res.headers["Connection"] = "Upgrade";
 		ConnectionStream conn = res.switchProtocol("websocket");
 
+		// TODO: put back 'scope' once it is actually enforced by DMD
 		/*scope*/ auto socket = new WebSocket(conn, req);
 		try on_handshake(socket);
 		catch (Exception e) {
@@ -177,12 +168,6 @@ HTTPServerRequestDelegate handleWebSockets(void delegate(WebSocket) on_handshake
 		socket.close();
 	}
 	return &callback;
-}
-/// ditto
-deprecated("Please add 'scope' to the WebSocket parameter of the callback.")
-HTTPServerRequestDelegate handleWebSockets(void function(WebSocket) on_handshake)
-{
-	return handleWebSockets(toDelegate(on_handshake));
 }
 
 
@@ -311,14 +296,23 @@ final class WebSocket {
 
 	/**
 		Actively closes the connection.
+
+		Params:
+			code = Numeric code indicating a termination reason.
+			reason = Message describing why the connection was terminated.
 	*/
-	void close()
+	void close(short code = 0, string reason = "")
 	{
+		//control frame payloads are limited to 125 bytes
+		assert(reason.length <= 123);
+
 		if (connected) {
 			m_writeMutex.performLocked!({
 				m_sentCloseFrame = true;
 				Frame frame;
 				frame.opcode = FrameOpcode.close;
+				if(code != 0)
+					frame.payload = std.bitmanip.nativeToBigEndian(code) ~ cast(ubyte[])reason;
 				frame.fin = true;
 				frame.writeFrame(m_conn);
 			});

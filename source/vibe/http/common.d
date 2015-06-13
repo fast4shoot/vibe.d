@@ -34,7 +34,7 @@ enum HTTPVersion {
 
 
 enum HTTPMethod {
-	// HTTP standard
+	// HTTP standard, RFC 2616
 	GET,
 	HEAD,
 	PUT,
@@ -45,14 +45,33 @@ enum HTTPMethod {
 	TRACE,
 	CONNECT,
 
-	// WEBDAV extensions
-	COPY,
-	LOCK,
-	MKCOL,
-	MOVE,
+	// WEBDAV extensions, RFC 2518
 	PROPFIND,
 	PROPPATCH,
-	UNLOCK
+	MKCOL,
+	COPY,
+	MOVE,
+	LOCK,
+	UNLOCK,
+
+	// Versioning Extensions to WebDAV, RFC 3253
+	VERSIONCONTROL,
+	REPORT,
+	CHECKOUT,
+	CHECKIN,
+	UNCHECKOUT,
+	MKWORKSPACE,
+	UPDATE,
+	LABEL,
+	MERGE,
+	BASELINECONTROL,
+	MKACTIVITY,
+
+	// Ordered Collections Protocol, RFC 3648
+	ORDERPATCH,
+
+	// Access Control Protocol, RFC 3744
+	ACL
 }
 
 
@@ -61,7 +80,11 @@ enum HTTPMethod {
 */
 string httpMethodString(HTTPMethod m)
 {
-	return to!string(m);
+	switch(m){
+		case HTTPMethod.BASELINECONTROL: return "BASELINE-CONTROL";
+		case HTTPMethod.VERSIONCONTROL: return "VERSION-CONTROL";
+		default: return to!string(m);
+	}
 }
 
 /**
@@ -71,6 +94,7 @@ HTTPMethod httpMethodFromString(string str)
 {
 	switch(str){
 		default: throw new Exception("Invalid HTTP method: "~str);
+		// HTTP standard, RFC 2616
 		case "GET": return HTTPMethod.GET;
 		case "HEAD": return HTTPMethod.HEAD;
 		case "PUT": return HTTPMethod.PUT;
@@ -80,13 +104,34 @@ HTTPMethod httpMethodFromString(string str)
 		case "OPTIONS": return HTTPMethod.OPTIONS;
 		case "TRACE": return HTTPMethod.TRACE;
 		case "CONNECT": return HTTPMethod.CONNECT;
-		case "COPY": return HTTPMethod.COPY;
-		case "LOCK": return HTTPMethod.LOCK;
-		case "MKCOL": return HTTPMethod.MKCOL;
-		case "MOVE": return HTTPMethod.MOVE;
+
+		// WEBDAV extensions, RFC 2518
 		case "PROPFIND": return HTTPMethod.PROPFIND;
 		case "PROPPATCH": return HTTPMethod.PROPPATCH;
+		case "MKCOL": return HTTPMethod.MKCOL;
+		case "COPY": return HTTPMethod.COPY;
+		case "MOVE": return HTTPMethod.MOVE;
+		case "LOCK": return HTTPMethod.LOCK;
 		case "UNLOCK": return HTTPMethod.UNLOCK;
+
+		// Versioning Extensions to WebDAV, RFC 3253
+		case "VERSION-CONTROL": return HTTPMethod.VERSIONCONTROL;
+		case "REPORT": return HTTPMethod.REPORT;
+		case "CHECKOUT": return HTTPMethod.CHECKOUT;
+		case "CHECKIN": return HTTPMethod.CHECKIN;
+		case "UNCHECKOUT": return HTTPMethod.UNCHECKOUT;
+		case "MKWORKSPACE": return HTTPMethod.MKWORKSPACE;
+		case "UPDATE": return HTTPMethod.UPDATE;
+		case "LABEL": return HTTPMethod.LABEL;
+		case "MERGE": return HTTPMethod.MERGE;
+		case "BASELINE-CONTROL": return HTTPMethod.BASELINECONTROL;
+		case "MKACTIVITY": return HTTPMethod.MKACTIVITY;
+
+		// Ordered Collections Protocol, RFC 3648
+		case "ORDERPATCH": return HTTPMethod.ORDERPATCH;
+
+		// Access Control Protocol, RFC 3744
+		case "ACL": return HTTPMethod.ACL;
 	}
 }
 
@@ -94,8 +139,11 @@ unittest
 {
 	assert(httpMethodString(HTTPMethod.GET) == "GET");
 	assert(httpMethodString(HTTPMethod.UNLOCK) == "UNLOCK");
+	assert(httpMethodString(HTTPMethod.VERSIONCONTROL) == "VERSION-CONTROL");
+	assert(httpMethodString(HTTPMethod.BASELINECONTROL) == "BASELINE-CONTROL");
 	assert(httpMethodFromString("GET") == HTTPMethod.GET);
 	assert(httpMethodFromString("UNLOCK") == HTTPMethod.UNLOCK);
+	assert(httpMethodFromString("VERSION-CONTROL") == HTTPMethod.VERSIONCONTROL);
 }
 
 
@@ -263,7 +311,7 @@ class HTTPStatusException : Exception {
 
 	this(int status, string message = null, string file = __FILE__, int line = __LINE__, Throwable next = null)
 	{
-		super(message ? message : httpStatusText(status), file, line, next);
+		super(message != "" ? message : httpStatusText(status), file, line, next);
 		m_status = status;
 	}
 
@@ -507,15 +555,15 @@ final class Cookie {
 		dst.put(name);
 		dst.put('=');
 		filterURLEncode(dst, this.value);
-		if (this.domain) {
+		if (this.domain != "") {
 			dst.put("; Domain=");
 			dst.put(this.domain);
 		}
-		if (this.path) {
+		if (this.path != "") {
 			dst.put("; Path=");
 			dst.put(this.path);
 		}
-		if (this.expires) {
+		if (this.expires != "") {
 			dst.put("; Expires=");
 			dst.put(this.expires);
 		}

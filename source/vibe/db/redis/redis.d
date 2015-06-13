@@ -52,7 +52,7 @@ final class RedisClient {
 	/// Returns Redis version
 	@property string redisVersion()
 	{
-		if(!m_version)
+		if(m_version == "")
 		{
 			import std.string;
 			auto info = info();
@@ -116,11 +116,13 @@ final class RedisClient {
 		See_also: $(LINK2 http://redis.io/commands/flushall, FLUSHALL)
 	*/
 	void deleteAll() { request("FLUSHALL"); }
-	/// Scheduled for deprecation, use $(D deleteAll) instead.
-	alias flushAll = deleteAll;
 
-	/// Scheduled for deprecation, use $(D RedisDatabase.deleteAll) instead.
-	void flushDB() { request("FLUSHDB"); }
+	/// Compatibility alias - use $(D deleteAll) instead.
+	deprecated("Use deleteAll instead.") alias flushAll = deleteAll;
+
+	/// Compatibility alias - use $(D RedisDatabase.deleteAll) instead.
+	deprecated("Use RedisDatabase.deleteAll instead.") void flushDB() { request("FLUSHDB"); }
+
 	/// Get information and statistics about the server
 	string info() { return request!string("INFO"); }
 	/// Get the UNIX time stamp of the last successful save to disk
@@ -312,9 +314,6 @@ struct RedisDatabase {
 	/// Set multiple hash fields to multiple values
 	void hmset(ARGS...)(string key, ARGS args) { request("HMSET", key, args); }
 
-	/// This command does not exist in redis and must be implemented at a higher level
-	deprecated bool hmsetNX(ARGS...)(string key, ARGS args) { return request!bool("HMSET", key, args); }
-
 	/// Get all the values in a hash
 	RedisReply!T hvals(T = string)(string key) if(isValidRedisValueType!T) { return request!(RedisReply!T)("HVALS", key); }
 
@@ -403,7 +402,6 @@ struct RedisDatabase {
 	long zadd(ARGS...)(string key, ARGS args) { return request!long("ZADD", key, args); }
 	/// Returns the sorted set cardinality (number of elements) of the sorted set stored at key.
 	long zcard(string key) { return request!long("ZCARD", key); }
-	deprecated("Use zcard() instead.") alias Zcard = zcard;
 	/// Returns the number of elements in the sorted set at key with a score between min and max
 	long zcount(string RNG = "[]")(string key, double min, double max) { return request!long("ZCOUNT", key, getMinMaxArgs!RNG(min, max)); }
 	/// Increments the score of member in the sorted set stored at key by increment.
@@ -450,7 +448,7 @@ struct RedisDatabase {
 		if (isValidRedisValueType!T)
 	{
 		auto str = request!string("ZRANK", key, member);
-		return str ? parse!long(str) : -1;
+		return str != "" ? parse!long(str) : -1;
 	}
 
 	/// Removes the specified members from the sorted set stored at key.
@@ -491,7 +489,7 @@ struct RedisDatabase {
 		if (isValidRedisValueType!T)
 	{
 		auto str = request!string("ZREVRANK", key, member);
-		return str ? parse!long(str) : -1;
+		return str != "" ? parse!long(str) : -1;
 	}
 
 	/// Returns the score of member in the sorted set at key.
@@ -510,7 +508,7 @@ struct RedisDatabase {
 	long publish(string channel, string message)
 	{
 		auto str = request!string("PUBLISH", channel, message);
-		return str ? parse!long(str) : -1;
+		return str != "" ? parse!long(str) : -1;
 	}
 
 	/// Inspect the state of the Pub/Sub subsystem

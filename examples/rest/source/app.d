@@ -396,6 +396,63 @@ unittest
 	assert (routes[0].method == HTTPMethod.GET && routes[2].pattern == "/example6_api/concat");
 }
 
+/* Demonstrates optional REST parameters using std.typecons.Nullable.
+ * 
+ * Every non-URL argument that is of the type Nullable!T will be deserialized
+ * as T only when the argument is actually present in the request.
+ * 
+ * Similarly, it will be serialized as T only when it's got an actual value 
+ * assigned.
+ */
+@rootPathFromName
+interface Example7API
+{
+	// Returns the concatenation of all the arguments that were provided
+	@queryParam("a", "a")
+	@headerParam("b", "b")
+	string getConcat(Nullable!string a, Nullable!string b, Nullable!string c);
+	
+	// ditto
+	@queryParam("a", "a")
+	@headerParam("b", "b")
+	@bodyParam("c", "c")
+	string postConcat(Nullable!string a, Nullable!string b, Nullable!string c, Nullable!string d);
+	
+	// returns true if the posted struct matches (42, true, "hello world", [1,2,3]) or if 
+	// it is not present
+	bool postStruct(Nullable!ComplexStruct struct_);
+}
+
+struct ComplexStruct
+{
+	int a;
+	bool b;
+	string c;
+	int[] d;
+}
+
+class Example7 : Example7API
+{
+	string getConcat(Nullable!string a, Nullable!string b, Nullable!string c)
+	{
+		import std.array : join;
+		import std.algorithm : filter;
+		return [a, b, c].filter!(x => !x.isNull).join;
+	}
+	
+	string postConcat(Nullable!string a, Nullable!string b, Nullable!string c, Nullable!string d)
+	{
+		import std.array : join;
+		import std.algorithm : filter;
+		import std.stdio;
+		return [a, b, c, d].filter!(x => !x.isNull).join;
+	}
+	
+	bool postStruct(Nullable!ComplexStruct struct_)
+	{
+		return struct_.isNull || struct_ == ComplexStruct(42, true, "hello world", [1,2,3]);
+	}
+}
 
 shared static this()
 {
@@ -409,6 +466,7 @@ shared static this()
 	registerRestInterface(routes, new Example4());
 	registerRestInterface(routes, new Example5());
 	registerRestInterface(routes, new Example6());
+	registerRestInterface(routes, new Example7());
 
 	auto settings = new HTTPServerSettings();
 	settings.port = 8080;
@@ -528,6 +586,34 @@ shared static this()
 			assert(answer == expected);
 		}
 
+		// Example 7 -- using RestInterfaceClient
+		{
+			import std.array : join;
+			import std.algorithm : filter;
+			import std.stdio;
+			
+			auto api = new RestInterfaceClient!Example7API("http://127.0.0.1:8080");
+			foreach (a; [Nullable!string(), Nullable!string("hello")])
+			foreach (b; [Nullable!string(), Nullable!string("world")])
+			foreach (c; [Nullable!string(), Nullable!string("foo bar")])
+			{
+				{
+					auto expected = [a, b, c].filter!(x => !x.isNull).join;
+					//assert(api.getConcat(a, b, c) == expected);
+				}
+				
+				foreach (d; [Nullable!string(), Nullable!string("a string")])
+				{
+					auto expected = [a, b, c, d].filter!(x => !x.isNull).join;
+					auto got = api.postConcat(a, b, c, d);
+					assert(got == expected);
+				}
+			}
+			
+			assert(!api.postStruct(Nullable!ComplexStruct(ComplexStruct(42, true, "hello world", [3,4,5]))));
+			assert(api.postStruct(Nullable!ComplexStruct(ComplexStruct(42, true, "hello world", [1,2,3]))));
+			assert(api.postStruct(Nullable!ComplexStruct()));
+		}
 		logInfo("Success.");
 	});
 }

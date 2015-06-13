@@ -362,6 +362,7 @@ private class OutputContext {
 	Line m_line = Line(null, -1, null);
 	size_t m_baseIndent;
 	bool m_isHTML5;
+	bool warnTranslationContext = false;
 
 	this(size_t base_indent = 0)
 	{
@@ -488,6 +489,8 @@ private struct DietCompiler(TRANSLATE...)
 		auto output = new OutputContext(base_indent);
 		buildWriter(output, 0);
 		assert(output.m_nodeStack.length == 0, "Template writer did not consume all nodes!?");
+		if (output.warnTranslationContext)
+			output.writeCodeLine(`pragma(msg, "Warning: No translation context found, ignoring '&' suffixes. Note that you have to use @translationContext in conjunction with vibe.web.web.render() (vibe.http.server.render() does not work) to enable translation support.");`);
 		return output.m_result;
 	}
 
@@ -661,7 +664,9 @@ private struct DietCompiler(TRANSLATE...)
 						}
 						break;
 					case "doctype": // HTML Doctype header
+						assertp(level == 0, "'doctype' may only be used as a top level tag.");
 						buildDoctypeNodeWriter(output, ln, j, level);
+						assertp(next_indent_level <= level, "'doctype' may not have child tags.");
 						break;
 					case "block": // Block insertion place
 						output.pushDummyNode();
@@ -852,7 +857,9 @@ private struct DietCompiler(TRANSLATE...)
 			output.writeExpr(ctstrip(line[i+2 .. line.length]));
 		} else {
 			string rawtext = line[i .. line.length];
-			static if (TRANSLATE.length > 0) if (ws_type.isTranslated) rawtext = TRANSLATE[0](rawtext);
+			static if (TRANSLATE.length > 0) {
+				if (ws_type.isTranslated) rawtext = TRANSLATE[0](rawtext);
+			} else if (ws_type.isTranslated) output.warnTranslationContext = true;
 			if (hasInterpolations(rawtext)) {
 				buildInterpolatedString(output, rawtext);
 			} else {
@@ -1074,7 +1081,7 @@ private struct DietCompiler(TRANSLATE...)
 				output.writeExprHtmlAttribEscaped(`join(`~att.value~`, " ")`);
 				output.writeString(`"`);
 				output.writeCodeLine("} else static if(is(typeof("~att.value~") == string)) {");
-				output.writeCodeLine("if ("~att.value~"){");
+				output.writeCodeLine("if (("~att.value~") != \"\"){");
 				output.writeString(` `~att.key~`="`);
 				output.writeExprHtmlAttribEscaped(att.value);
 				output.writeString(`"`);
@@ -1490,6 +1497,8 @@ unittest {
 	// issue #1033
 	assert(compile!("input(placeholder=')')")
 		== "<input placeholder=\")\"/>");
+	assert(compile!("input(placeholder='(')")
+		== "<input placeholder=\"(\"/>");
 }
 
 unittest { // blocks and extensions

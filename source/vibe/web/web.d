@@ -9,7 +9,7 @@
 
 	See $(D registerWebInterface) for an overview of how the system works.
 
-	Copyright: © 2013-2014 RejectedSoftware e.K.
+	Copyright: © 2013-2015 RejectedSoftware e.K.
 	License: Subject to the terms of the MIT license, as written in the included LICENSE.txt file.
 	Authors: Sönke Ludwig
 */
@@ -127,7 +127,7 @@ void registerWebInterface(C : Object, MethodStyle method_style = MethodStyle.low
 		static if (!is(typeof(__traits(getMember, Object, M)))) { // exclude Object's default methods and field
 			foreach (overload; MemberFunctionsTuple!(C, M)) {
 				alias RT = ReturnType!overload;
-				enum minfo = extractHTTPMethodAndName!overload();
+				enum minfo = extractHTTPMethodAndName!(overload, true)();
 				enum url = minfo.hadPathUDA ? minfo.url : adjustMethodStyle(minfo.url, method_style);
 
 				static if (is(RT == class) || is(RT == interface)) {
@@ -146,11 +146,12 @@ void registerWebInterface(C : Object, MethodStyle method_style = MethodStyle.low
 					});
 					if (settings.ignoreTrailingSlash && !fullurl.endsWith("*")) {
 						auto m = fullurl.endsWith("/") ? fullurl[0 .. $-1] : fullurl ~ "/";
-						auto fullpath = Path(fullurl);
 						router.match(minfo.method, m, (req, res) {
 							static if (minfo.method == HTTPMethod.GET) {
 								URL redurl = req.fullURL;
-								redurl.path = fullpath;
+								auto redpath = redurl.path;
+								redpath.endsWithSlash = !redpath.endsWithSlash;
+								redurl.path = redpath;
 								res.redirect(redurl);
 							} else {
 								handleRequest!(M, overload)(req, res, instance, settings);
