@@ -406,6 +406,11 @@ StatusCodeAttribute statusCode(HTTPStatus status)
 	return StatusCodeAttribute(status);
 }
 
+auto messageTransformer(alias request, alias response)()
+{
+	return MessageTransformerAttribute!(request, response)();
+}
+
 /**
  * Represents a rest error message containing unknown content
  */
@@ -414,21 +419,23 @@ class RestUnexpectedResponseException : HTTPStatusException
 	import vibe.http.client;
 	
 	private {
-		HTTPClientResponse _res;
+		ubyte[] _res;
 	}
 	
-	this(HTTPClientResponse res, Throwable next = null, string file = __FILE__, int line = __LINE__)
+	this(scope HTTPClientResponse res, Throwable next = null, string file = __FILE__, int line = __LINE__)
 	{
+		import vibe.stream.operations;
+		
 		super(res.statusCode, "Unexpected REST response", file, line, next);
-		_res = res;
+		_res = res.bodyReader.readAll();
 	}
 	
-	@property HTTPClientResponse response()
+	@property ubyte[] response()
 	{
 		return _res;
 	}
 	
-	@property const(HTTPClientResponse) response() const
+	@property const(ubyte)[] response() const
 	{
 		return _res;
 	}
@@ -457,6 +464,13 @@ class RestException : HTTPStatusException {
 	
 	/// The HTTP status code
 	@property const(Json) jsonResult() const { return m_jsonResult; }
+}
+
+/// private
+package struct MessageTransformerAttribute(alias requestFn, alias responseFn)
+{
+	alias request = requestFn;
+	alias response = responseFn;
 }
 
 /// private

@@ -1675,7 +1675,9 @@ struct JsonSerializer {
 		else static if (isJsonSerializable!T) return T.fromJson(m_current);
 		else static if (is(T == float) || is(T == double)) {
 			if (m_current.type == Json.Type.undefined) return T.nan;
-			return m_current.type == Json.Type.float_ ? cast(T)m_current.get!double : Json.Type.bigInt ? cast(T)m_current.bigIntToLong() : cast(T)m_current.get!long;
+			else if (m_current.type == Json.Type.float_) return cast(T)m_current.get!double;
+			else if (m_current.type == Json.Type.bigInt) return cast(T)m_current.bigIntToLong();
+			else return cast(T)m_current.get!long;
 		}
 		else {
 			return m_current.get!T();

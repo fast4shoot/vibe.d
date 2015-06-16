@@ -578,12 +578,14 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 	import vibe.http.common : HTTPStatusException, HTTPStatus, enforceBadRequest;
 	import vibe.utils.string : sanitizeUTF8;
 	import vibe.internal.meta.funcattr : IsAttributedParameter;
+	import vibe.internal.meta.uda : findFirstUDA;
 
 	alias PT = ParameterTypeTuple!Func;
 	alias RT = ReturnType!Func;
 	alias ParamDefaults = ParameterDefaultValueTuple!Func;
 	enum ParamNames = [ ParameterIdentifierTuple!Func ];
 	enum FuncId = (fullyQualifiedName!T~ "." ~ __traits(identifier, Func));
+	enum transformer = findFirstUDA!(MessageTransformerAttribute, Func);
 
 	void handler(HTTPServerRequest req, HTTPServerResponse res)
 	{
@@ -753,10 +755,12 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 
 			static if (is(RT == void)) {
 				handler(&__traits(getMember, inst, method), params);
-				res.writeJsonBody(Json.emptyObject);
+				static if (transformer.found) transformer.value.response(res);
+				else res.writeJsonBody(Json.emptyObject);
 			} else {
 				auto ret = handler(&__traits(getMember, inst, method), params);
-				res.writeJsonBody(ret);
+				static if (transformer.found) transformer.value.response(res, ret);
+				else res.writeJsonBody(ret);
 			}
 		} catch (HTTPStatusException e) {
 			if (res.headerWritten) logDebug("Response already started when a HTTPStatusException was thrown. Client will not receive the proper error code (%s)!", e.status);
@@ -778,8 +782,10 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 /// This deserializes a JSON parameter directly or into a Nullable
 T deserializeJsonParameter(T)(Json parameter)
 {
-	static if (isNullable!T) return T(deserializeJson!(typeof(T.init.get))(parameter));
-	else return deserializeJson!T(parameter);
+	static if (isNullable!T) {
+		if (parameter.type == Json.Type.null_) return T();
+		else return T(deserializeJson!(typeof(T.init.get))(parameter));
+	} else return deserializeJson!T(parameter);
 }
 
 /// Makes decisions about substituting missing REST parameters
