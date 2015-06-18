@@ -378,7 +378,7 @@ class RestInterfaceClient(I) : I
 		 * body_ = The body to send, as a string. If a Content-Type is present in $(D hdrs), it will be used, otherwise it will default to
 		 *		the generic type "application/json".
 		 */
-		Json request(HTTPMethod verb, string name, in ref InetHeaderMap hdrs, string query, string body_, Nullable!HTTPStatus expectedStatus) const
+		string request(HTTPMethod verb, string name, in ref InetHeaderMap hdrs, string query, string body_, Nullable!HTTPStatus expectedStatus) const
 		{
 			import vibe.http.client : HTTPClientRequest, HTTPClientResponse, requestHTTP;
 			import vibe.http.common : HTTPStatusException, HTTPStatus, httpMethodString, httpStatusText;
@@ -389,7 +389,7 @@ class RestInterfaceClient(I) : I
 			if (name.length) url ~= Path(name);
 			if (query.length) url.queryString = query;
 
-			Json ret;
+			string ret;
 
 			auto reqdg = (scope HTTPClientRequest req) {
 				req.method = verb;
@@ -405,20 +405,21 @@ class RestInterfaceClient(I) : I
 			};
 
 			auto resdg = (scope HTTPClientResponse res) {
-				ret = res.readJson();
+				import vibe.stream.operations : readAllUTF8;
+				ret = res.bodyReader.readAllUTF8();
 
 				logDebug(
 					 "REST call: %s %s -> %d, %s",
 					 httpMethodString(verb),
 					 url.toString(),
 					 res.statusCode,
-					 ret.toString()
+					 ret
 					 );
 
 				auto resStatusCode = cast(HTTPStatus) res.statusCode;
 				
 				if (expectedStatus.isNull ? !isSuccessCode(resStatusCode) : resStatusCode != expectedStatus)
-					throw new RestException(res.statusCode, ret);
+					throw new RestException(res.statusCode, ret.length == 0 ? Json.emptyObject : parseJsonString(ret));
 			};
 
 			requestHTTP(url, reqdg, resdg);
@@ -611,82 +612,98 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 				} else static if (anySatisfy!(mixin(GenCmp!("Loop", i, ParamNames[i]).Name), UDATuple!(WebParamAttribute, Func))) {
 					// User anotated the origin of this parameter.
 					alias paramsArgList = Filter!(mixin(GenCmp!("Loop", i, ParamNames[i]).Name), UDATuple!(WebParamAttribute, Func));
-					// @headerParam.
-					static if (paramsArgList[0].origin == WebParamAttribute.Origin.Header) {
-						alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
-						// If it has no substitute
-						static if (!Substitute.hasSubstitute) {
-							auto fld = enforceBadRequest(paramsArgList[0].field in req.headers,
-							format("Expected field '%s' in header", paramsArgList[0].field));
-						} else {
-							auto fld = paramsArgList[0].field in req.headers;
-							if (fld is null) {
-								params[i] = Substitute.substitute;
-								logDebug("No header param %s, using substitute value", paramsArgList[0].identifier);
-								continue;
+					
+					try {
+						// @headerParam.
+						static if (paramsArgList[0].origin == WebParamAttribute.Origin.Header) {
+							alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
+							// If it has no substitute
+							static if (!Substitute.hasSubstitute) {
+								auto fld = enforceRestParameter(paramsArgList[0].field in req.headers,
+									paramsArgList[0].origin,
+									paramsArgList[0].field,
+									format("Expected field '%s' in header", paramsArgList[0].field));
+							} else {
+								auto fld = paramsArgList[0].field in req.headers;
+								if (fld is null) {
+									params[i] = Substitute.substitute;
+									logDebug("No header param %s, using substitute value", paramsArgList[0].identifier);
+									continue;
+								}
 							}
-						}
-						logDebug("Header param: %s <- %s", paramsArgList[0].identifier, *fld);
-						params[i] = fromRestString!P(*fld);
-					} else static if (paramsArgList[0].origin == WebParamAttribute.Origin.Query) {
-						// Note: Doesn't work if HTTPServerOption.parseQueryString is disabled.
-						alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
-						
-						static if (!Substitute.hasSubstitute) {
-							auto fld = enforceBadRequest(paramsArgList[0].field in req.query,
-										     format("Expected form field '%s' in query", paramsArgList[0].field));
-						} else {
-							pragma (msg, Substitute.substitute);
-							auto fld = paramsArgList[0].field in req.query;
-							if (fld is null) {
-								params[i] = Substitute.substitute;
-								logDebug("No query param %s, using substitute value", paramsArgList[0].identifier);
-								continue;
+							logDebug("Header param: %s <- %s", paramsArgList[0].identifier, *fld);
+							params[i] = fromRestString!P(*fld);
+						} else static if (paramsArgList[0].origin == WebParamAttribute.Origin.Query) {
+							// Note: Doesn't work if HTTPServerOption.parseQueryString is disabled.
+							alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
+							
+							static if (!Substitute.hasSubstitute) {
+								auto fld = enforceRestParameter(paramsArgList[0].field in req.query,
+									paramsArgList[0].origin,
+									paramsArgList[0].field,
+									format("Expected form field '%s' in query", paramsArgList[0].field));
+							} else {
+								pragma (msg, Substitute.substitute);
+								auto fld = paramsArgList[0].field in req.query;
+								if (fld is null) {
+									params[i] = Substitute.substitute;
+									logDebug("No query param %s, using substitute value", paramsArgList[0].identifier);
+									continue;
+								}
 							}
-						}
-						logDebug("Query param: %s <- %s", paramsArgList[0].identifier, *fld);
-						params[i] = fromRestString!P(*fld);
-					} else static if (paramsArgList[0].origin == WebParamAttribute.Origin.Body) {
-						enforceBadRequest(
-								  req.contentType == "application/json",
-								  "The Content-Type header needs to be set to application/json."
-								  );
-						enforceBadRequest(
-								  req.json.type != Json.Type.Undefined,
-								  "The request body does not contain a valid JSON value."
-								  );
-						enforceBadRequest(
-								  req.json.type == Json.Type.Object,
-								  "The request body must contain a JSON object with an entry for each required parameter."
-								  );
-
-						alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
-						static if (!Substitute.hasSubstitute) {
-							auto par = req.json[paramsArgList[0].field];
-							enforceBadRequest(par.type != Json.Type.Undefined,
-									  format("Missing parameter %s", paramsArgList[0].field)
+							logDebug("Query param: %s <- %s", paramsArgList[0].identifier, *fld);
+							params[i] = fromRestString!P(*fld);
+						} else static if (paramsArgList[0].origin == WebParamAttribute.Origin.Body) {
+							enforceBadRequest(
+									  req.contentType == "application/json",
+									  "The Content-Type header needs to be set to application/json."
 									  );
-							logDebug("Body param: %s <- %s", paramsArgList[0].identifier, par);
-						} else {
-							auto par = req.json[paramsArgList[0].field];
-							if (par.type == Json.Type.Undefined) {
-								logDebug("No body param %s, using substitute value", paramsArgList[0].identifier);
-								params[i] = Substitute.substitute;
-								continue;
+							enforceBadRequest(
+									  req.json.type != Json.Type.Undefined,
+									  "The request body does not contain a valid JSON value."
+									  );
+							enforceBadRequest(
+									  req.json.type == Json.Type.Object,
+									  "The request body must contain a JSON object with an entry for each required parameter."
+									  );
+
+							alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
+							static if (!Substitute.hasSubstitute) {
+								auto par = req.json[paramsArgList[0].field];
+								enforceRestParameter(par.type != Json.Type.Undefined,
+									paramsArgList[0].origin,
+									paramsArgList[0].field,
+									format("Missing parameter %s", paramsArgList[0].field));
+								logDebug("Body param: %s <- %s", paramsArgList[0].identifier, par);
+							} else {
+								auto par = req.json[paramsArgList[0].field];
+								if (par.type == Json.Type.Undefined) {
+									logDebug("No body param %s, using substitute value", paramsArgList[0].identifier);
+									params[i] = Substitute.substitute;
+									continue;
+								}
 							}
-						}
-						
-						params[i] = params[i] = deserializeJsonParameter!P(par);
-					} else static assert (false, "Internal error: Origin "~to!string(paramsArgList[0].origin)~" is not implemented.");
+							
+							params[i] = deserializeJsonParameter!P(par);
+						} else static assert (false, "Internal error: Origin "~to!string(paramsArgList[0].origin)~" is not implemented.");
+					} catch (Exception ex) {
+						throw handleParameterException(ex, paramsArgList[0].origin, paramsArgList[0].field);
+					}
 				} else static if (ParamNames[i].startsWith("_")) {
 					// URL parameter
 					static if (ParamNames[i] != "_dummy") {
-						enforceBadRequest(
-							ParamNames[i][1 .. $] in req.params,
-							format("req.param[%s] was not set!", ParamNames[i][1 .. $])
-						);
-						logDebug("param %s %s", ParamNames[i], req.params[ParamNames[i][1 .. $]]);
-						params[i] = fromRestString!P(req.params[ParamNames[i][1 .. $]]);
+						try {
+							enforceRestParameter(
+								ParamNames[i][1 .. $] in req.params,
+								WebParamAttribute.Origin.Url,
+								ParamNames[i][1 .. $],
+								format("req.param[%s] was not set!", ParamNames[i][1 .. $])
+							);
+							logDebug("param %s %s", ParamNames[i], req.params[ParamNames[i][1 .. $]]);
+							params[i] = fromRestString!P(req.params[ParamNames[i][1 .. $]]);
+						} catch (Exception ex) {
+							throw handleParameterException(ex, WebParamAttribute.Origin.Url, ParamNames[i][1 .. $]);
+						}
 					}
 				} else {
 					// normal parameter
@@ -694,61 +711,72 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 					auto pname = strip(ParamNames[i]);
 
 					if (req.method == HTTPMethod.GET) {
-						// TODO: merge with the WebParamAttribute.Origin.Query section above
-						logDebug("query %s of %s", pname, req.query);
+						try {
+							// TODO: merge with the WebParamAttribute.Origin.Query section above
+							logDebug("query %s of %s", pname, req.query);
 
-						alias Substitute = SubstituteValue!(P, DefVal);
-						static if (!Substitute.hasSubstitute) {
-							enforceBadRequest(
-								pname in req.query,
-								format("Missing query parameter '%s'", pname)
-							);
-						} else {
-							if (pname !in req.query) {
-								params[i] = Substitute.substitute;
-								continue;
+							alias Substitute = SubstituteValue!(P, DefVal);
+							static if (!Substitute.hasSubstitute) {
+								enforceRestParameter(
+									pname in req.query,
+									WebParamAttribute.Origin.Query,
+									pname,
+									format("Missing query parameter '%s'", pname)
+								);
+							} else {
+								if (pname !in req.query) {
+									params[i] = Substitute.substitute;
+									continue;
+								}
 							}
-						}
 
-						params[i] = fromRestString!P(req.query[pname]);
+							params[i] = fromRestString!P(req.query[pname]);
+						} catch (Exception ex) {
+							throw handleParameterException(ex, WebParamAttribute.Origin.Query, pname);
+						}
 					} else {
-						// TODO: merge with the WebParamAttribute.Origin.Body section above
-						logDebug("%s %s", method, pname);
+						try {
+							// TODO: merge with the WebParamAttribute.Origin.Body section above
+							logDebug("%s %s", method, pname);
 
-						enforceBadRequest(
-							req.contentType == "application/json",
-							"The Content-Type header needs to be set to application/json."
-						);
-						enforceBadRequest(
-							req.json.type != Json.Type.Undefined,
-							"The request body does not contain a valid JSON value."
-						);
-						enforceBadRequest(
-							req.json.type == Json.Type.Object,
-							"The request body must contain a JSON object with an entry for each parameter."
-						);
+							enforceBadRequest(
+								req.contentType == "application/json",
+								"The Content-Type header needs to be set to application/json."
+							);
+							enforceBadRequest(
+								req.json.type != Json.Type.Undefined,
+								"The request body does not contain a valid JSON value."
+							);
+							enforceBadRequest(
+								req.json.type == Json.Type.Object,
+								"The request body must contain a JSON object with an entry for each parameter."
+							);
 
-						alias Substitute = SubstituteValue!(P, DefVal);
-						static if (!Substitute.hasSubstitute) {
-							auto par = req.json[pname];
-							enforceBadRequest(par.type != Json.Type.Undefined,
-									  format("Missing parameter %s", pname)
-									  );
-						} else {
-							auto par = req.json[pname];
-							if (par.type == Json.Type.Undefined) {
-								params[i] = Substitute.substitute;
-								continue;
+							alias Substitute = SubstituteValue!(P, DefVal);
+							static if (!Substitute.hasSubstitute) {
+								auto par = req.json[pname];
+								enforceRestParameter(par.type != Json.Type.Undefined,
+									WebParamAttribute.Origin.Body,
+									pname,
+									format("Missing parameter %s", pname));
+							} else {
+								auto par = req.json[pname];
+								if (par.type == Json.Type.Undefined) {
+									params[i] = Substitute.substitute;
+									continue;
+								}
 							}
+							
+							params[i] = deserializeJsonParameter!P(par);
+						} catch (Exception ex) {
+							throw handleParameterException(ex, WebParamAttribute.Origin.Body, pname);
 						}
-						
-						params[i] = deserializeJsonParameter!P(par);
 					}
 				}
 			}
 		}
 
-		try {
+		//try {
 			import vibe.internal.meta.funcattr;
 
 			auto handler = createAttributedFunction!Func(req, res);
@@ -762,7 +790,7 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 				static if (transformer.found) transformer.value.response(res, ret);
 				else res.writeJsonBody(ret);
 			}
-		} catch (HTTPStatusException e) {
+		/*} catch (HTTPStatusException e) {
 			if (res.headerWritten) logDebug("Response already started when a HTTPStatusException was thrown. Client will not receive the proper error code (%s)!", e.status);
 			else res.writeJsonBody([ "statusMessage": e.msg ], e.status);
 		} catch (Exception e) {
@@ -773,7 +801,7 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 				[ "statusMessage": e.msg, "statusDebugMessage": sanitizeUTF8(cast(ubyte[])e.toString()) ],
 				HTTPStatus.internalServerError
 			);
-		}
+		}*/
 	}
 
 	return &handler;
@@ -799,6 +827,12 @@ template SubstituteValue(T, DefVal...)
 	
 	static if (hasDefault) enum substitute = DefVal[0];
 	else static if (hasNull) enum substitute = T();
+}
+
+/// Handles exceptions raised when reading a REST parameter
+auto handleParameterException(Exception ex, WebParamAttribute.Origin origin, string field, string file = __FILE__, typeof(__LINE__) line = __LINE__) {
+	if (cast(RestParameterException) ex) return ex;
+	else return new RestParameterException(origin, field, "Error while converting parameter", ex, file, line);
 }
 
 /// private
@@ -1100,7 +1134,7 @@ private string genClientBody(alias Func)() {
 		static if (!is(RT == void)) {
 			request_str ~= q{
 				typeof(return) ret__;
-				deserializeJson(ret__, jret__);
+				deserializeJson(ret__, parseJsonString(jret__));
 				return ret__;
 			};
 		}

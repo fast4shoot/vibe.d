@@ -411,18 +411,44 @@ auto messageTransformer(alias request, alias response)()
 	return MessageTransformerAttribute!(request, response)();
 }
 
+T enforceRestParameter(T)(T condition, WebParamAttribute.Origin origin, string parameterName, lazy string message, Throwable next = null, string file = __FILE__, typeof(__LINE__) line = __LINE__) {
+	import std.exception : enforce;
+	return enforce(condition, new RestParameterException(origin, parameterName, message, next, file, line));
+}
+
+
+/**
+ * Thrown when a REST parameter is missing or malformed
+ */
+class RestParameterException : HTTPStatusException {
+	private {
+		WebParamAttribute.Origin _origin;
+		string _parameterName;
+	}
+	
+	this(WebParamAttribute.Origin origin, string parameterName, lazy string message, Throwable next = null, string file = __FILE__, typeof(__LINE__) line = __LINE__)
+	{
+		super(HTTPStatus.badRequest, message, file, line, next);
+		
+		_origin = origin;
+		_parameterName = parameterName;
+	}
+	
+	@property WebParamAttribute.Origin origin() const { return _origin; }
+	@property string parameterName() const { return _parameterName; }
+}
+
 /**
  * Represents a rest error message containing unknown content
  */
-class RestUnexpectedResponseException : HTTPStatusException
-{
+class RestUnexpectedResponseException : HTTPStatusException {
 	import vibe.http.client;
 	
 	private {
 		ubyte[] _res;
 	}
 	
-	this(scope HTTPClientResponse res, Throwable next = null, string file = __FILE__, int line = __LINE__)
+	this(scope HTTPClientResponse res, Throwable next = null, string file = __FILE__, typeof(__LINE__) line = __LINE__)
 	{
 		import vibe.stream.operations;
 		
@@ -506,6 +532,7 @@ package struct WebParamAttribute {
 		Body,
 		Header,
 		Query,
+		Url,
 	}
 
 	Origin origin;
