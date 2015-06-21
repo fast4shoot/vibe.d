@@ -786,11 +786,11 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 
 			static if (is(RT == void)) {
 				handler(&__traits(getMember, inst, method), params);
-				static if (transformer.found) transformer.value.response(res);
+				static if (transformer.found) transformer.value.response(res, statusCode);
 				else res.writeJsonBody(Json.emptyObject, statusCode);
 			} else {
 				auto ret = handler(&__traits(getMember, inst, method), params);
-				static if (transformer.found) transformer.value.response(res, ret);
+				static if (transformer.found) transformer.value.response(res, statusCode, ret);
 				else res.writeJsonBody(ret, statusCode);
 			}
 		/*} catch (HTTPStatusException e) {
