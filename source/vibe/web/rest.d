@@ -587,6 +587,9 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 	enum ParamNames = [ ParameterIdentifierTuple!Func ];
 	enum FuncId = (fullyQualifiedName!T~ "." ~ __traits(identifier, Func));
 	enum transformer = findFirstUDA!(MessageTransformerAttribute, Func);
+	enum userStatusCode = findFirstUDA!(StatusCodeAttribute, Func);
+	static if (userStatusCode.found) enum statusCode = userStatusCode.value.statusCode;
+	else enum statusCode = HTTPStatus.ok;
 
 	void handler(HTTPServerRequest req, HTTPServerResponse res)
 	{
@@ -784,11 +787,11 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 			static if (is(RT == void)) {
 				handler(&__traits(getMember, inst, method), params);
 				static if (transformer.found) transformer.value.response(res);
-				else res.writeJsonBody(Json.emptyObject);
+				else res.writeJsonBody(Json.emptyObject, statusCode);
 			} else {
 				auto ret = handler(&__traits(getMember, inst, method), params);
 				static if (transformer.found) transformer.value.response(res, ret);
-				else res.writeJsonBody(ret);
+				else res.writeJsonBody(ret, statusCode);
 			}
 		/*} catch (HTTPStatusException e) {
 			if (res.headerWritten) logDebug("Response already started when a HTTPStatusException was thrown. Client will not receive the proper error code (%s)!", e.status);
