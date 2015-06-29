@@ -402,6 +402,8 @@ class RestInterfaceClient(I) : I
 
 				if (body_ != "")
 					req.writeBody(cast(ubyte[])body_, hdrs.get("Content-Type", "application/json"));
+				else 
+					req.writeBody(cast(ubyte[])body_);
 			};
 
 			auto resdg = (scope HTTPClientResponse res) {
