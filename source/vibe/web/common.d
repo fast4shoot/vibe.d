@@ -533,6 +533,7 @@ package struct WebParamAttribute {
 		Header,
 		Query,
 		Url,
+		FullBody,
 	}
 
 	Origin origin;
@@ -611,6 +612,13 @@ WebParamAttribute queryParam(string identifier, string field)
 	if (!__ctfe)
 		assert(false, onlyAsUda!__FUNCTION__);
 	return WebParamAttribute(WebParamAttribute.Origin.Query, identifier, field);
+}
+
+WebParamAttribute fullBodyParam(string identifier)
+{
+	if (!__ctfe)
+		assert(false, onlyAsUda!__FUNCTION__);
+	return WebParamAttribute(WebParamAttribute.Origin.FullBody, identifier, null);
 }
 
 /**

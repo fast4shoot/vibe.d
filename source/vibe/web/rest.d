@@ -493,6 +493,13 @@ class RestInterfaceClient(I) : I
 		}
 	}
 
+	private string genFullBody(T)(T param)
+	{
+		auto jsonBody = serializeToJson(param);
+		debug return jsonBody.toPrettyString();
+		else return jsonBody.toString();
+	}
+	
 	private string _stripName(string name)
 	{
 		if (m_settings.stripTrailingUnderscore && name.endsWith("_"))
@@ -690,6 +697,19 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 							}
 							
 							params[i] = deserializeJsonParameter!P(par);
+						} else static if (paramsArgList[0].origin == WebParamAttribute.Origin.FullBody) {
+							enforceBadRequest(
+									  req.contentType == "application/json",
+									  "The Content-Type header needs to be set to application/json."
+									  );
+							enforceBadRequest(
+									  req.json.type != Json.Type.Undefined,
+									  "The request body does not contain a valid JSON value."
+									  );
+
+							alias Substitute = SubstituteValue!(P, ParamDefaults[i]);
+							assert(!Substitute.hasSubstitute, "full-body parameter cannot have a default value");
+							params[i] = deserializeJsonParameter!P(req.json);
 						} else static assert (false, "Internal error: Origin "~to!string(paramsArgList[0].origin)~" is not implemented.");
 					} catch (Exception ex) {
 						throw handleParameterException(ex, paramsArgList[0].origin, paramsArgList[0].field);
@@ -1055,6 +1075,7 @@ private string genClientBody(alias Func)() {
 		string[string] defaultParamCTMap;
 		string[string] queryParamCTMap;
 		string[string] bodyParamCTMap;
+		string fullBodyIdentifier;
 
 		// Block 2
 		foreach (i, PT; PTT){
@@ -1076,6 +1097,8 @@ private string genClientBody(alias Func)() {
 					queryParamCTMap[paramsArgList[0].field] = paramsArgList[0].identifier;
 				else static if (paramsArgList[0].origin == WebParamAttribute.Origin.Body)
 					bodyParamCTMap[paramsArgList[0].field] = paramsArgList[0].identifier;
+				else static if (paramsArgList[0].origin == WebParamAttribute.Origin.FullBody)
+					fullBodyIdentifier = paramsArgList[0].identifier;
 				else
 					static assert (0, "Internal error: Unknown WebParamAttribute.Origin in REST client code generation.");
 			} else static if (!ParamNames[i].startsWith("_")
@@ -1121,20 +1144,35 @@ private string genClientBody(alias Func)() {
 			request_str ~= ";\n";
 		}
 
-		request_str ~= q{
-			// By default for GET / HEAD, params are send via the query string.
-			static if (HTTPMethod.%1$s == HTTPMethod.GET || HTTPMethod.%1$s == HTTPMethod.HEAD) {
-				auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%2$s%5$s%3$s), genBody(%4$s), %7$s);
-			} else {
-				// Otherwise, they're send as a Json object via the body.
-				auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%3$s), genBody(%2$s%6$s%4$s), %7$s);
-			}
+		bool hasBodyParams = bodyParamCTMap || (defaultParamCTMap && (meta.method == HTTPMethod.GET && meta.method == HTTPMethod.HEAD));
+		assert (!fullBodyIdentifier || !hasBodyParams, "A method cannot have body params and full-body params at the same time");
+	
+		if (fullBodyIdentifier)
+		{
+			request_str ~= q{
+				auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%2$s%5$s%3$s), genFullBody(%4$s), %6$s);
+			}.format(to!string(meta.method),
+				 paramCTMap(defaultParamCTMap), paramCTMap(queryParamCTMap), fullBodyIdentifier, // params map
+				 (defaultParamCTMap.length && queryParamCTMap.length) ? ", " : "", // genQuery(%2$s, %3$s);
+				 statusCode); 
+		}
+		else
+		{
+			request_str ~= q{
+				// By default for GET / HEAD, params are send via the query string.
+				static if (HTTPMethod.%1$s == HTTPMethod.GET || HTTPMethod.%1$s == HTTPMethod.HEAD) {
+					auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%2$s%5$s%3$s), genBody(%4$s), %7$s);
+				} else {
+					// Otherwise, they're send as a Json object via the body.
+					auto jret__ = request(HTTPMethod.%1$s, url__ , headers__, genQuery(%3$s), genBody(%2$s%6$s%4$s), %7$s);
+				}
 
-		}.format(to!string(meta.method),
-			 paramCTMap(defaultParamCTMap), paramCTMap(queryParamCTMap), paramCTMap(bodyParamCTMap), // params map
-			 (defaultParamCTMap.length && queryParamCTMap.length) ? ", " : "", // genQuery(%2$s, %3$s);
-			 (defaultParamCTMap.length && bodyParamCTMap.length) ? ", " : "",
-			 statusCode); // genBody(%2$s, %4$s);
+			}.format(to!string(meta.method),
+				 paramCTMap(defaultParamCTMap), paramCTMap(queryParamCTMap), paramCTMap(bodyParamCTMap), // params map
+				 (defaultParamCTMap.length && queryParamCTMap.length) ? ", " : "", // genQuery(%2$s, %3$s);
+				 (defaultParamCTMap.length && bodyParamCTMap.length) ? ", " : "", // genBody(%2$s, %4$s);
+				 statusCode); 
+		}
 
 		static if (!is(RT == void)) {
 			request_str ~= q{
