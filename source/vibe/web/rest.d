@@ -655,7 +655,6 @@ private HTTPServerRequestDelegate jsonMethodHandler(T, string method, alias Func
 									paramsArgList[0].field,
 									format("Expected form field '%s' in query", paramsArgList[0].field));
 							} else {
-								pragma (msg, Substitute.substitute);
 								auto fld = paramsArgList[0].field in req.query;
 								if (fld is null) {
 									params[i] = Substitute.substitute;
