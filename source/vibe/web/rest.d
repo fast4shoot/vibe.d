@@ -118,6 +118,12 @@ void registerRestInterface(TImpl)(URLRouter router, TImpl instance, RestInterfac
 		else return name;
 	}
 
+	import std.typecons : Tuple;
+	alias RouteKey = Tuple!(HTTPMethod, "verb", string, "url");
+	alias Route = Tuple!(HTTPMethod, "verb", string, "url", HTTPServerRequestDelegate, "handler", string[], "params", int, "priority", string, "name");
+
+	Route[] routes;
+
 	foreach (method; __traits(allMembers, I)) {
 		// WORKAROUND #1045 / @@BUG14375@@
 		static if (method.length != 0)
@@ -127,6 +133,9 @@ void registerRestInterface(TImpl)(URLRouter router, TImpl instance, RestInterfac
 			enum userStatusCode = findFirstUDA!(StatusCodeAttribute, overload);
 			static if (userStatusCode.found) enum statusCode = userStatusCode.value.statusCode;
 			else enum statusCode = HTTPStatus.ok;
+			enum userPriority = findFirstUDA!(PriorityAttribute, overload);
+			static if (userPriority.found) enum priority = userPriority.value.priority;
+			else enum priority = 0;
 
 			static if (meta.hadPathUDA) {
 				string url = meta.url;
@@ -161,12 +170,56 @@ void registerRestInterface(TImpl)(URLRouter router, TImpl instance, RestInterfac
 					auto combined_url = concatURL(
 						concatURL(url_prefix, ":id", true),
 						url);
-					addRoute(meta.method, combined_url, handler, params);
+					routes ~= Route(meta.method, combined_url, handler, params, priority, method);
 				} else {
-					addRoute(meta.method, concatURL(url_prefix, url), handler, params);
+					routes ~= Route(meta.method, concatURL(url_prefix, url), handler, params, priority, method);
 				}
 			}
 		}
+	}
+	
+	bool[RouteKey] processedRoutes;
+	
+	foreach (i, masterRoute; routes)
+	{
+		(){
+			import std.algorithm.sorting : sort, SwapStrategy;
+			import std.algorithm.iteration : map, joiner, filter;
+			import std.array : array;
+			import vibe.http.server : HTTPServerRequest, HTTPServerResponse;
+			
+			auto key = RouteKey(masterRoute.verb, masterRoute.url);
+			if (key !in processedRoutes)
+			{
+				processedRoutes[key] = true;
+				
+				auto routeGroup = 
+					routes[i..$]
+					.filter!(x => x.verb == masterRoute.verb && x.url == masterRoute.url)
+					.array;
+				
+				auto byPriority = routeGroup.sort!((a,b) => a.priority > b.priority, SwapStrategy.stable);
+				
+				addRoute(masterRoute.verb, masterRoute.url, 
+					(HTTPServerRequest req, HTTPServerResponse res) {
+						RestParameterException lastEx = null;
+						foreach (route; byPriority)
+						{
+							try {
+								route.handler(req, res);
+								return;
+							}
+							catch (RestParameterException ex)
+							{
+								lastEx = ex;
+							}
+						}
+						
+						throw lastEx;
+					},
+					byPriority.map!(x => x.params).joiner.array);
+			}
+		}();
 	}
 }
 

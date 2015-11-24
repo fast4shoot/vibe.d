@@ -543,6 +543,11 @@ package struct WebParamAttribute {
 	string field;
 }
 
+package struct PriorityAttribute
+{
+	int priority;
+}
+
 /**
  * Declare that a parameter will be transmitted to the API through the body.
  *
@@ -619,6 +624,13 @@ WebParamAttribute fullBodyParam(string identifier)
 	if (!__ctfe)
 		assert(false, onlyAsUda!__FUNCTION__);
 	return WebParamAttribute(WebParamAttribute.Origin.FullBody, identifier, null);
+}
+
+PriorityAttribute priority(int priority)
+{
+	if (!__ctfe)
+		assert(false, onlyAsUda!__FUNCTION__);
+	return PriorityAttribute(priority);
 }
 
 /**
